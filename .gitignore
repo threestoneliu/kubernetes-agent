@@ -33,3 +33,6 @@ go.work.sum
 
 # Tooling state (e.g. visual companion server working files)
 .superpowers/
+
+# Per-user Claude Code settings (project-level .claude/ commands and skills stay tracked)
+.claude/settings.local.json
