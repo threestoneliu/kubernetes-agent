@@ -32,10 +32,10 @@
 
 ## 4. 启动流程
 
-- [ ] 4.1 实现 `cmd/server/main.go` 启动序列:解析 config → 加载/生成 master key → 打开 SQLite + 跑 migrations → 插入默认护栏规则(若空)→ LLM provider ping → 启动 HTTP
-- [ ] 4.2 默认护栏规则 seed:4 条规则(系统 NS 禁删 / kind 黑名单 / unsafeFields / production confirm),按 design 文档 D5
-- [ ] 4.3 启动期错误统一:任何一步失败 → stderr + `os.Exit(1)`,绝不静默
-- [ ] 4.4 写 `internal/config` 解析测试 + `internal/store` 迁移测试
+- [x] 4.1 实现 `cmd/server/main.go` 启动序列:解析 config → 加载/生成 master key → 打开 SQLite + 跑 migrations → 插入默认护栏规则(若空)→ LLM provider ping → 启动 HTTP
+- [x] 4.2 默认护栏规则 seed:4 条规则(系统 NS 禁删 / kind 黑名单 / unsafeFields / production confirm),按 design 文档 D5
+- [x] 4.3 启动期错误统一:任何一步失败 → stderr + `os.Exit(1)`,绝不静默
+- [x] 4.4 写 `internal/config` 解析测试 + `internal/store` 迁移测试
 
 ## 5. K8s 工具层
 
