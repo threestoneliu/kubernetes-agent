@@ -30,3 +30,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Tooling state (e.g. visual companion server working files)
+.superpowers/
