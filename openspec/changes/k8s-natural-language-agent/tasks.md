@@ -12,16 +12,16 @@
 
 ## 2. 存储层
 
-- [ ] 2.1 创建 `internal/store/db.go`:用 `modernc.org/sqlite` 打开 db、应用 PRAGMA(journal_mode=WAL, foreign_keys=ON)、`SetMaxOpenConns(1)`(SQLite 串行写)
-- [ ] 2.2 创建 `internal/store/migrations.go`:维护 `schema_migrations` 表,实现 `versioned migrations` 模式(每条迁移 `up` SQL,按顺序执行)
-- [ ] 2.3 写第一条 migration:6 张表(clusters / sessions / messages / plans / policies / audit_log)+ 2 索引
-- [ ] 2.4 创建 `internal/store/clusters.go`:CRUD + `ListByName` + `ListAll` + 加密 blob 读写
-- [ ] 2.5 创建 `internal/store/sessions.go`:CRUD + `UpdateTitle` + `TouchUpdatedAt`
-- [ ] 2.6 创建 `internal/store/messages.go`:按 `session_id` 列表 + 批量插入(用于 `message_end` 一次性写入)
-- [ ] 2.7 创建 `internal/store/plans.go`:CRUD + `UpdateStatus` + `MarkExecuted`
-- [ ] 2.8 创建 `internal/store/policies.go`:CRUD + `ListEnabled` + `SetEnabled` + 启动期默认规则插入
-- [ ] 2.9 创建 `internal/store/audit.go`:append-only 插入(无 update/delete 方法暴露)
-- [ ] 2.10 写表驱动测试:每个 repo 覆盖 happy path + 不存在错误 + 唯一约束违反
+- [x] 2.1 创建 `internal/store/db.go`:用 `modernc.org/sqlite` 打开 db、应用 PRAGMA(journal_mode=WAL, foreign_keys=ON)、`SetMaxOpenConns(1)`(SQLite 串行写)
+- [x] 2.2 创建 `internal/store/migrations.go`:维护 `schema_migrations` 表,实现 `versioned migrations` 模式(每条迁移 `up` SQL,按顺序执行)
+- [x] 2.3 写第一条 migration:6 张表(clusters / sessions / messages / plans / policies / audit_log)+ 2 索引
+- [x] 2.4 创建 `internal/store/clusters.go`:CRUD + `ListByName` + `ListAll` + 加密 blob 读写
+- [x] 2.5 创建 `internal/store/sessions.go`:CRUD + `UpdateTitle` + `TouchUpdatedAt`
+- [x] 2.6 创建 `internal/store/messages.go`:按 `session_id` 列表 + 批量插入(用于 `message_end` 一次性写入)
+- [x] 2.7 创建 `internal/store/plans.go`:CRUD + `UpdateStatus` + `MarkExecuted`
+- [x] 2.8 创建 `internal/store/policies.go`:CRUD + `ListEnabled` + `SetEnabled` + 启动期默认规则插入
+- [x] 2.9 创建 `internal/store/audit.go`:append-only 插入(无 update/delete 方法暴露)
+- [x] 2.10 写表驱动测试:每个 repo 覆盖 happy path + 不存在错误 + 唯一约束违反
 
 ## 3. 加密层
 
