@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,10 @@ type Config struct {
 var envPattern = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
 
 func Load() (*Config, error) {
-	path := defaultPath()
+	path, err := defaultPath()
+	if err != nil {
+		return nil, err
+	}
 	if v := os.Getenv("KUBERNETES_AGENT_CONFIG"); v != "" {
 		path = v
 	}
@@ -71,10 +75,34 @@ func Load() (*Config, error) {
 	if c.Storage.DBPath == "" {
 		c.Storage.DBPath = "~/.kubernetes-agent/data.db"
 	}
+	c.Storage.DBPath = expandHome(c.Storage.DBPath)
 	return &c, nil
 }
 
-func defaultPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".kubernetes-agent", "config.yaml")
+func defaultPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home directory: %w", err)
+	}
+	return filepath.Join(home, ".kubernetes-agent", "config.yaml"), nil
+}
+
+// expandHome replaces a leading "~" with the user's home directory.
+// A leading "~/" expands to "$HOME/", a bare "~" expands to "$HOME".
+// "~user" (other user) is NOT supported — we only handle the current user.
+func expandHome(p string) string {
+	if !strings.HasPrefix(p, "~") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p // leave to caller to surface; we don't error in helper
+	}
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	return p // unhandled ~user form; pass through unchanged
 }

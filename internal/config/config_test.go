@@ -46,7 +46,35 @@ func TestLoad_StorageDefault(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte("server:\n  port: 9000\n"), 0600))
 	t.Setenv("KUBERNETES_AGENT_CONFIG", cfgPath)
 
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+	expected := filepath.Join(home, ".kubernetes-agent", "data.db")
+
 	c, err := Load()
 	require.NoError(t, err)
-	assert.Equal(t, "~/.kubernetes-agent/data.db", c.Storage.DBPath)
+	assert.Equal(t, expected, c.Storage.DBPath)
+}
+
+func TestExpandHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	assert.Equal(t, home, expandHome("~"))
+	assert.Equal(t, filepath.Join(home, "foo"), expandHome("~/foo"))
+	assert.Equal(t, "/abs/path", expandHome("/abs/path"))
+	assert.Equal(t, "rel/path", expandHome("rel/path"))
+	assert.Equal(t, "/foo", expandHome("/foo"))
+}
+
+func TestLoad_StorageHomeExpansion(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	// Set HOME to a known location via Setenv so we can assert expansion
+	t.Setenv("HOME", dir) // POSIX; on macOS this works, on Windows Setenv is case-insensitive
+	require.NoError(t, os.WriteFile(cfgPath, []byte("server:\n  port: 9000\n"), 0600))
+	t.Setenv("KUBERNETES_AGENT_CONFIG", cfgPath)
+
+	c, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, ".kubernetes-agent", "data.db"), c.Storage.DBPath)
 }
