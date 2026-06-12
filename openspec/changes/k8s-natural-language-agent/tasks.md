@@ -2,7 +2,7 @@
 
 ## 1. 项目脚手架
 
-- [ ] 1.1 初始化 `go.mod`(`module github.com/<owner>/k8s-agent`),声明 Go 1.22+
+- [ ] 1.1 初始化 `go.mod`(`module github.com/threestoneliu/k8s-agent`),声明 Go 1.22+
 - [ ] 1.2 建立目录结构:`cmd/server/`、`internal/{server,agent,tools,policy,store,crypto,llm,config,logging}/`、`web/`、`configs/`
 - [ ] 1.3 写 `cmd/server/main.go` 最小骨架:解析 CLI 参数、加载 config、调用 `slog.SetDefault`、启动占位 HTTP server
 - [ ] 1.4 创建 `internal/config`:YAML 解析 + `${ENV}` 展开 + 默认值(server.host/port、storage.db_path、llm.{default,providers}、logging)
