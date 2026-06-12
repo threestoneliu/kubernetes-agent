@@ -2,7 +2,7 @@
 
 ## 1. 项目脚手架
 
-- [ ] 1.1 初始化 `go.mod`(`module github.com/threestoneliu/k8s-agent`),声明 Go 1.22+
+- [ ] 1.1 初始化 `go.mod`(`module github.com/threestoneliu/kubernetes-agent`),声明 Go 1.22+
 - [ ] 1.2 建立目录结构:`cmd/server/`、`internal/{server,agent,tools,policy,store,crypto,llm,config,logging}/`、`web/`、`configs/`
 - [ ] 1.3 写 `cmd/server/main.go` 最小骨架:解析 CLI 参数、加载 config、调用 `slog.SetDefault`、启动占位 HTTP server
 - [ ] 1.4 创建 `internal/config`:YAML 解析 + `${ENV}` 展开 + 默认值(server.host/port、storage.db_path、llm.{default,providers}、logging)
@@ -27,7 +27,7 @@
 - [ ] 3.1 创建 `internal/crypto/aead.go`:封装 AES-256-GCM,接口 `Encrypt(plain []byte) (blob []byte, err error)` / `Decrypt(blob []byte) (plain []byte, err error)`,blob 格式 = `nonce(12) | ciphertext | tag(16)`
 - [ ] 3.2 创建 `internal/crypto/masterkey.go`:实现"env 优先,文件后备"加载,首次启动生成随机 32 字节,chmod 0600,root 启动拒绝
 - [ ] 3.3 写 round-trip 测试:任意明文加密-解密一致、密文不重复、GCM tag 篡改必失败
-- [ ] 3.4 写 `K8S_AGENT_MASTER_KEY` 环境变量支持:base64 解码 32 字节,长度不符报错
+- [ ] 3.4 写 `KUBERNETES_AGENT_MASTER_KEY` 环境变量支持:base64 解码 32 字节,长度不符报错
 
 ## 4. 启动流程
 
@@ -91,7 +91,7 @@
 ## 10. Web UI 脚手架
 
 - [ ] 10.1 `web/package.json` 初始化:Vite + React + TypeScript + Tailwind(可选)
-- [ ] 10.2 `web/vite.config.ts`:开发期代理 `/api` 到 `:8080`,支持 `K8S_AGENT_DEV=1` 后端代理前端 dev server
+- [ ] 10.2 `web/vite.config.ts`:开发期代理 `/api` 到 `:8080`,支持 `KUBERNETES_AGENT_DEV=1` 后端代理前端 dev server
 - [ ] 10.3 创建 `web/src/sse.ts`:基于原生 `EventSource` 的客户端,支持 last_event_id 重连
 - [ ] 10.4 创建状态管理:5 个 UI 状态机(对话 / Plan 阻塞 / ask_user / 错误 toast / 工具执行)
 - [ ] 10.5 风险等级 emoji + 颜色组件 + 折叠组件(reasoning / 工具行)
@@ -127,5 +127,5 @@
 - [ ] 14.1 写 README:本地启动步骤、首次体验、master.key/data.db 一起备份警告
 - [ ] 14.2 写默认护栏规则说明 + 如何自定义
 - [ ] 14.3 写 LLM provider 配置示例
-- [ ] 14.4 写开发模式说明(`K8S_AGENT_DEV=1` + Vite dev server)
+- [ ] 14.4 写开发模式说明(`KUBERNETES_AGENT_DEV=1` + Vite dev server)
 - [ ] 14.5 写后续 change 路线图(链接 brainstorm.md 末尾)

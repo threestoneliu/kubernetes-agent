@@ -14,7 +14,7 @@
 - **THEN** 系统 MUST 使用 fantasy 的 OpenAI 兼容 adapter,`baseURL` 与 `apiKey` 来自配置,缺一 MUST 启动失败
 
 ### Requirement: 配置驱动
-所有 provider MUST 来自 `~/.k8s-agent/config.yaml` 的 `llm.providers` 列表,MUST NOT 在代码中硬编码 provider。
+所有 provider MUST 来自 `~/.kubernetes-agent/config.yaml` 的 `llm.providers` 列表,MUST NOT 在代码中硬编码 provider。
 
 #### Scenario: 配置缺失
 - **WHEN** `config.yaml` 无 `llm` 段或 `providers` 为空

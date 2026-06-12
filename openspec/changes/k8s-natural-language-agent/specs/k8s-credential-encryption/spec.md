@@ -14,19 +14,19 @@
 - **THEN** 系统 MUST 仅展示明文 `name`、`server`、`user` 字段,MUST NOT 在列表页解密或展示 kubeconfig 内容
 
 ### Requirement: Master key 来源
-master key MUST 来自以下两个来源之一(优先级从高到低):环境变量 `K8S_AGENT_MASTER_KEY` · 文件 `~/.k8s-agent/master.key`(权限 MUST 为 0600)。
+master key MUST 来自以下两个来源之一(优先级从高到低):环境变量 `KUBERNETES_AGENT_MASTER_KEY` · 文件 `~/.kubernetes-agent/master.key`(权限 MUST 为 0600)。
 
 #### Scenario: 环境变量优先
-- **WHEN** `K8S_AGENT_MASTER_KEY` 环境变量存在且为 32 字节 base64
+- **WHEN** `KUBERNETES_AGENT_MASTER_KEY` 环境变量存在且为 32 字节 base64
 - **THEN** 系统 MUST 使用该环境变量作为 master key,MUST NOT 读取文件
 
 #### Scenario: 文件作为后备
-- **WHEN** `K8S_AGENT_MASTER_KEY` 不存在
-- **THEN** 系统 MUST 从 `~/.k8s-agent/master.key` 读取 32 字节,文件不存在或权限不为 0600 MUST 拒绝启动
+- **WHEN** `KUBERNETES_AGENT_MASTER_KEY` 不存在
+- **THEN** 系统 MUST 从 `~/.kubernetes-agent/master.key` 读取 32 字节,文件不存在或权限不为 0600 MUST 拒绝启动
 
 #### Scenario: 首次启动生成 key
 - **WHEN** 首次启动且 master key 文件不存在
-- **THEN** 系统 MUST 生成 32 字节随机数据,base64 编码后写入 `~/.k8s-agent/master.key`,文件权限 MUST 为 0600,且 MUST 拒绝以 root 启动(避免权限被忽略)
+- **THEN** 系统 MUST 生成 32 字节随机数据,base64 编码后写入 `~/.kubernetes-agent/master.key`,文件权限 MUST 为 0600,且 MUST 拒绝以 root 启动(避免权限被忽略)
 
 ### Requirement: 加密格式
 密文 BLOB MUST 包含三段拼接:`nonce(12 bytes)` + `ciphertext(N bytes)` + `tag(16 bytes)`,且 MUST 全部存储在同一个 `BLOB` 字段。

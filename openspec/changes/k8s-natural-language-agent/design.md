@@ -98,7 +98,7 @@
 
 ### D8. AES-256-GCM + 本地 master.key
 
-**Why**:标准库实现、无外部依赖;master.key 来自 `K8S_AGENT_MASTER_KEY` 环境变量或 `~/.k8s-agent/master.key`(0600);MVP 不引入 KMS。
+**Why**:标准库实现、无外部依赖;master.key 来自 `KUBERNETES_AGENT_MASTER_KEY` 环境变量或 `~/.kubernetes-agent/master.key`(0600);MVP 不引入 KMS。
 
 **存储格式**:`nonce(12B) | ciphertext | tag(16B)` 单 BLOB。
 
@@ -157,10 +157,10 @@
 本 change 是项目从零到 0.1.0 的首个发布,无既有用户。
 
 **首次部署**:
-1. `go build -o k8s-agent ./cmd/server` 构建单二进制
+1. `go build -o kubernetes-agent ./cmd/server` 构建单二进制
 2. `cd web && pnpm install && pnpm build` 构建前端(产物 `web/dist/` 被 `embed.FS` 引用)
-3. `./k8s-agent` 启动
-4. 首次启动:自动创建 `~/.k8s-agent/master.key`(0600)+ `data.db` + 插入默认护栏规则
+3. `./kubernetes-agent` 启动
+4. 首次启动:自动创建 `~/.kubernetes-agent/master.key`(0600)+ `data.db` + 插入默认护栏规则
 5. 浏览器访问 `http://127.0.0.1:8080`
 6. 引导页:上传 kubeconfig → 选 LLM provider → 开始对话
 
@@ -168,7 +168,7 @@
 
 **回滚策略**:
 - 本 change 无"上线"概念,本机即用即弃
-- 若 SQLite schema 不兼容,删除 `~/.k8s-agent/` 整个目录(用户主动操作)
+- 若 SQLite schema 不兼容,删除 `~/.kubernetes-agent/` 整个目录(用户主动操作)
 
 ## Open Questions
 
@@ -177,7 +177,7 @@
 - **Q3. LLM 流式过程中如何在数据库累积消息**:每个 token 写一次库太频繁,可能采用"流式期间只写内存,message_end 时一次入库"
 - **Q4. OpenAPI schema 解析范围**:dynamic client 删除/更新需要对象体;我们要求 LLM 传完整 JSON manifest,但描述/列表用 dynamic client 反射出的表头/列是否够友好
 - **Q5. OpenSpec bridge 与单 change 范围**:本 change 范围较大,实施时可能需要再次确认是否需要进一步拆分
-- **Q6. 客户端是否需要 kubectl 兼容**:如果未来用户想"在 kubectl 旁用 k8s-agent",可能需要 KUBECONFIG 路径注入而非上传整文件;MVP 用上传
+- **Q6. 客户端是否需要 kubectl 兼容**:如果未来用户想"在 kubectl 旁用 kubernetes-agent",可能需要 KUBECONFIG 路径注入而非上传整文件;MVP 用上传
 - **Q7. 多语言回复**:system prompt 写明默认中文,但 LLM 偶尔可能英文;是否需要强制中文(或允许按用户输入语言自适应)— MVP 留作配置项
 - **Q8. 生产命名空间发现**:不同公司 NS 命名不同,默认规则只覆盖 `production`/`prod`;需要文档引导用户自定义
 - **Q9. 续传范围与 last_event_id 语义**:明确"重连后能拿到什么 / 不能拿到什么"(MVP 倾向:plan_ready 后必须用户重新确认,不重放已执行的部分)

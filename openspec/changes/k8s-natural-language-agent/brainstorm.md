@@ -87,7 +87,7 @@
 - **形态**:Go 单二进制 + React SPA(embed.FS);用户本机起服务,浏览器访问 `http://127.0.0.1:8080`
 - **核心机制**:LLM(多 provider 通过 fantasy)→ 5 个 K8s 工具(读 3 + 写 2)→ client-go dynamic client → K8s API
 - **写安全**:Plan 预览(基于 server-side dry-run)+ 全局护栏(Go 层 policy engine,三态 allow/confirm/deny)
-- **凭证**:AES-256-GCM 加密落 SQLite,master.key 来自环境变量或 `~/.k8s-agent/master.key`(0600)
+- **凭证**:AES-256-GCM 加密落 SQLite,master.key 来自环境变量或 `~/.kubernetes-agent/master.key`(0600)
 - **通信**:SSE 事件流(`reasoning` / `token` / `tool_call` / `tool_result` / `plan_ready` / `plan_awaiting_confirm` / `ask_user` / `cluster_switch` / `session_meta` / `cancelled` / `error` / `message_end`)
 - **持久化**:SQLite 6 张表(clusters / sessions / messages / plans / policies / audit_log),其中 audit_log append-only
 - **MCP 风格 LLM 主动澄清**:`ask_user` 工具支持单选/多选/文本表单
@@ -142,7 +142,7 @@
 - 版本化迁移
 
 ### 配置与启动
-- 配置:`~/.k8s-agent/config.yaml`,支持 `${ENV}` 展开
+- 配置:`~/.kubernetes-agent/config.yaml`,支持 `${ENV}` 展开
 - 启动流程:解析 config → master.key 检查/生成 → SQLite 迁移 → 默认规则插入 → LLM ping → HTTP 启动
 - 健康检查:`GET /healthz` → `{ ok, providers }`
 
@@ -174,7 +174,7 @@
 - **LLM 流式过程中如何在数据库累积消息**:每个 token 写一次库太频繁,可能采用"流式期间只写内存,message_end 时一次入库"
 - **OpenAPI schema 解析范围**:dynamic client 删除/更新需要对象体;我们要求 LLM 传完整 JSON manifest,但描述/列表用 dynamic client 反射出的表头/列是否够友好
 - **OpenSpec bridge 与单 change 范围**:本 change 范围较大,实施时可能需要再次确认是否需要进一步拆分;目前按"读 + 写 + Plan/护栏"作为单一可交付单位
-- **客户端是否需要 kubectl 兼容**:如果未来用户想"在 kubectl 旁用 k8s-agent",可能需要 KUBECONFIG 路径注入而非上传整文件;MVP 用上传
+- **客户端是否需要 kubectl 兼容**:如果未来用户想"在 kubectl 旁用 kubernetes-agent",可能需要 KUBECONFIG 路径注入而非上传整文件;MVP 用上传
 - **多语言回复**:system prompt 写明默认中文,但 LLM 偶尔可能英文;是否需要强制中文(或允许按用户输入语言自适应)— MVP 留作配置项
 - **生产命名空间发现**:不同公司 NS 命名不同(可能是 `prod-xxx`、`prd`、`live`),默认规则只覆盖 `production`/`prod`;需要文档引导用户自定义
 
