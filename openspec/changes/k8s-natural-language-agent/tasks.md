@@ -25,10 +25,10 @@
 
 ## 3. 加密层
 
-- [ ] 3.1 创建 `internal/crypto/aead.go`:封装 AES-256-GCM,接口 `Encrypt(plain []byte) (blob []byte, err error)` / `Decrypt(blob []byte) (plain []byte, err error)`,blob 格式 = `nonce(12) | ciphertext | tag(16)`
-- [ ] 3.2 创建 `internal/crypto/masterkey.go`:实现"env 优先,文件后备"加载,首次启动生成随机 32 字节,chmod 0600,root 启动拒绝
-- [ ] 3.3 写 round-trip 测试:任意明文加密-解密一致、密文不重复、GCM tag 篡改必失败
-- [ ] 3.4 写 `KUBERNETES_AGENT_MASTER_KEY` 环境变量支持:base64 解码 32 字节,长度不符报错
+- [x] 3.1 创建 `internal/crypto/aead.go`:封装 AES-256-GCM,接口 `Encrypt(plain []byte) (blob []byte, err error)` / `Decrypt(blob []byte) (plain []byte, err error)`,blob 格式 = `nonce(12) | ciphertext | tag(16)`
+- [x] 3.2 创建 `internal/crypto/masterkey.go`:实现"env 优先,文件后备"加载,首次启动生成随机 32 字节,chmod 0600,root 启动拒绝
+- [x] 3.3 写 round-trip 测试:任意明文加密-解密一致、密文不重复、GCM tag 篡改必失败
+- [x] 3.4 写 `KUBERNETES_AGENT_MASTER_KEY` 环境变量支持:base64 解码 32 字节,长度不符报错
 
 ## 4. 启动流程
 
