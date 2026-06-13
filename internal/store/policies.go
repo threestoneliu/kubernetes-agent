@@ -3,6 +3,11 @@ package store
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
+
+	"github.com/threestoneliu/kubernetes-agent/internal/policy"
 )
 
 type Policy struct {
@@ -75,27 +80,39 @@ func (d *DB) SetEnabled(ctx context.Context, id string, enabled bool) error {
 	return nil
 }
 
-// SeedDefaultsIfEmpty inserts 4 placeholder default policies if the policies
-// table is empty. Task 6 (policy engine) will later replace the empty YAML
-// bodies with real rule definitions and re-seed.
-func (d *DB) SeedDefaultsIfEmpty(ctx context.Context) error {
-	var n int
-	if err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies`).Scan(&n); err != nil {
+// SeedDefaultPolicies seeds the 4 default guardrail rules returned by
+// policy.DefaultRules() on first run. If the policies table already contains
+// any rows, the function is a no-op so user-edited policies are preserved.
+func (d *DB) SeedDefaultPolicies(ctx context.Context) error {
+	n, err := d.countPolicies(ctx)
+	if err != nil {
 		return err
 	}
 	if n > 0 {
 		return nil
 	}
-	defaults := []Policy{
-		{ID: "default-no-delete-system-ns", Name: "default-no-delete-system-ns", Enabled: true},
-		{ID: "default-no-apply-cluster-resources", Name: "default-no-apply-cluster-resources", Enabled: true},
-		{ID: "default-no-unsafe-fields", Name: "default-no-unsafe-fields", Enabled: true},
-		{ID: "default-confirm-prod-ns", Name: "default-confirm-prod-ns", Enabled: true},
-	}
-	for _, p := range defaults {
-		if err := d.UpsertPolicy(ctx, p); err != nil {
+	for _, r := range policy.DefaultRules() {
+		yamlBytes, err := yaml.Marshal(r)
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		if err := d.UpsertPolicy(ctx, Policy{
+			ID:        uuid.NewString(),
+			Name:      r.Name,
+			YAML:      string(yamlBytes),
+			Enabled:   true,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (d *DB) countPolicies(ctx context.Context) (int, error) {
+	var n int
+	err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM policies`).Scan(&n)
+	return n, err
 }

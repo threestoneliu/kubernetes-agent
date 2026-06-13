@@ -71,7 +71,7 @@ func startup(cfg *config.Config, ctx context.Context) (*store.DB, *crypto.AEAD, 
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("migrate: %w", err)
 	}
-	if err := db.SeedDefaultsIfEmpty(ctx); err != nil {
+	if err := db.SeedDefaultPolicies(ctx); err != nil {
 		_ = db.Close()
 		return nil, nil, fmt.Errorf("seed default policies: %w", err)
 	}

@@ -285,19 +285,19 @@ func TestPolicy_UniqueNameConstraint(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestPolicy_SeedDefaultsIfEmpty(t *testing.T) {
+func TestPolicy_SeedDefaultPolicies(t *testing.T) {
 	db := openTestDB(t)
 	require.NoError(t, db.Migrate())
 	ctx := context.Background()
 
-	require.NoError(t, db.SeedDefaultsIfEmpty(ctx))
+	require.NoError(t, db.SeedDefaultPolicies(ctx))
 	policies, err := db.ListEnabledPolicies(ctx)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(policies), 4)
 
 	// Calling again should be a no-op
 	count := len(policies)
-	require.NoError(t, db.SeedDefaultsIfEmpty(ctx))
+	require.NoError(t, db.SeedDefaultPolicies(ctx))
 	policies2, err := db.ListEnabledPolicies(ctx)
 	require.NoError(t, err)
 	require.Equal(t, count, len(policies2))
