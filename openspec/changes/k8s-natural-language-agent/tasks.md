@@ -59,11 +59,11 @@
 
 ## 7. LLM 抽象
 
-- [ ] 7.1 创建 `internal/llm/provider.go`:统一接口 `Chat(ctx, messages, tools) (Stream, error)`,Stream 提供 `Next() (Event, error)`
-- [ ] 7.2 创建 anthropic / openai / openai-compatible 三个 adapter,经由 `charmbracelet/fantasy` 构造 client
-- [ ] 7.3 创建 `internal/llm/ping.go`:启动期并发 ping(发最小 messages 列表 + 1 秒超时),失败标 `disabled`
-- [ ] 7.4 创建 `internal/llm/prompt.go`:system prompt 模板(身份 + 工具集 + 写工作流 + 风格约束 + 默认中文)
-- [ ] 7.5 写 ping 测试:用 `httptest.Server` 模拟 provider 端点
+- [x] 7.1 创建 `internal/llm/provider.go`:统一接口 `Chat(ctx, messages, tools) (Stream, error)`,Stream 提供 `Next() (Event, error)`
+- [x] 7.2 创建 anthropic / openai / openai-compatible 三个 adapter,经由 `charmbracelet/fantasy` 构造 client
+- [x] 7.3 创建 `internal/llm/ping.go`:启动期并发 ping(发最小 messages 列表 + 1 秒超时),失败标 `disabled`
+- [x] 7.4 创建 `internal/llm/prompt.go`:system prompt 模板(身份 + 工具集 + 写工作流 + 风格约束 + 默认中文)
+- [x] 7.5 写 ping 测试:用 `httptest.Server` 模拟 provider 端点
 
 ## 8. Agent 循环
 
