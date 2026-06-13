@@ -50,11 +50,11 @@
 
 ## 6. 护栏层
 
-- [ ] 6.1 创建 `internal/policy/rule.go`:Rule 结构(Name, Effect[allow/confirm/deny], Match{Action, Namespace, Kind, UnsafeFields}) + YAML 解析
-- [ ] 6.2 创建 `internal/policy/jsonpath.go`:简化 JSONPath(支持 `[*]` 数组通配),匹配值
-- [ ] 6.3 创建 `internal/policy/engine.go`:顺序求值,返回首个匹配规则的 effect;无匹配 → 读=allow,写=confirm
-- [ ] 6.4 创建 `internal/policy/default.go`:4 条默认规则常量
-- [ ] 6.5 写 engine 测试:规则覆盖、顺序敏感、默认行为、unsafeFields 嵌套匹配
+- [x] 6.1 创建 `internal/policy/rule.go`:Rule 结构(Name, Effect[allow/confirm/deny], Match{Action, Namespace, Kind, UnsafeFields}) + YAML 解析
+- [x] 6.2 创建 `internal/policy/jsonpath.go`:简化 JSONPath(支持 `[*]` 数组通配),匹配值
+- [x] 6.3 创建 `internal/policy/engine.go`:顺序求值,返回首个匹配规则的 effect;无匹配 → 读=allow,写=confirm
+- [x] 6.4 创建 `internal/policy/default.go`:4 条默认规则常量
+- [x] 6.5 写 engine 测试:规则覆盖、顺序敏感、默认行为、unsafeFields 嵌套匹配
 
 ## 7. LLM 抽象
 
