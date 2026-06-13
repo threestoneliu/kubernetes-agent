@@ -39,14 +39,15 @@
 
 ## 5. K8s 工具层
 
-- [ ] 5.1 创建 `internal/tools/k8s/client.go`:`ClientFactory` 接口,根据 cluster_id 从 store 读 kubeconfig、AES-GCM 解密、构造 `*dynamic.DynamicClient`、缓存
-- [ ] 5.2 写 `k8s_get` 工具:参数 {resource, name, namespace, cluster_id},返回 K8s 对象 JSON;namespace 缺省 `default`
-- [ ] 5.3 写 `k8s_list` 工具:参数 {resource, namespace?, label_selector?, cluster_id},支持 ListAll namespaces(空 namespace)
-- [ ] 5.4 写 `k8s_describe` 工具:参数同 get + cluster_id,返回对象 + 相关 events(按 involvedObject UID 过滤)+ owner references + diagnosis hints 字段(静态映射,如 ImagePullBackOff / CrashLoopBackOff / Pending)
-- [ ] 5.5 写 `k8s_plan_write` 工具:参数 {operations: [...], cluster_id};policy 预检 → server-side dry-run(apply 用 `dryRun=All`,delete/scale 用 GET)→ 组装 plan,返回 {plan_id, summary, diffs, risk, denied}
-- [ ] 5.6 写 `k8s_execute_plan` 工具:参数 {plan_id, confirm_token};二次 policy 评估 → 顺序执行 operations → 失败时反向 apply 已成功部分 → 写 audit_log
-- [ ] 5.7 写 `ask_user` 工具:不调 K8s,只产生 SSE 事件让前端渲染表单;用户答复后作为工具结果回传
-- [ ] 5.8 写工具测试:用 `client-go` 的 `fake` clientset 覆盖 happy path + dry-run 失败 + policy 拒绝
+- [x] 5.1 创建 `internal/tools/k8s/client.go`:`ClientFactory` 接口,根据 cluster_id 从 store 读 kubeconfig、AES-GCM 解密、构造 `*dynamic.DynamicClient`、缓存
+- [x] 5.2 写 `k8s_get` 工具:参数 {resource, name, namespace, cluster_id},返回 K8s 对象 JSON;namespace 缺省 `default`
+- [x] 5.3 写 `k8s_list` 工具:参数 {resource, namespace?, label_selector?, cluster_id},支持 ListAll namespaces(空 namespace)
+- [x] 5.4 写 `k8s_describe` 工具:参数同 get + cluster_id,返回对象 + 相关 events(按 involvedObject UID 过滤)+ owner references + diagnosis hints 字段(静态映射,如 ImagePullBackOff / CrashLoopBackOff / Pending)
+- [x] 5.5 写 `k8s_plan_write` 工具:参数 {operations: [...], cluster_id};policy 预检 → server-side dry-run(apply 用 `dryRun=All`,delete/scale 用 GET)→ 组装 plan,返回 {plan_id, summary, diffs, risk, denied}
+- [x] 5.6 写 `k8s_execute_plan` 工具:参数 {plan_id, confirm_token};二次 policy 评估 → 顺序执行 operations → 失败时反向 apply 已成功部分 → 写 audit_log
+- [x] 5.7 写 `ask_user` 工具:不调 K8s,只产生 SSE 事件让前端渲染表单;用户答复后作为工具结果回传
+- [x] 5.8 写工具测试:用 `client-go` 的 `fake` clientset 覆盖 happy path + dry-run 失败 + policy 拒绝
+- [x] 5.9 (review fix) `Operation` JSON unmarshal 桥接(原字段 unexported 致 policy 静默 bypass)
 
 ## 6. 护栏层
 
