@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -127,4 +128,33 @@ func TestDiagnoseStatus_ImagePullBackOff(t *testing.T) {
 func TestDiagnoseStatus_NoStatus(t *testing.T) {
 	hints := diagnoseStatus(map[string]any{})
 	assert.Empty(t, hints)
+}
+
+func TestOperation_JSONUnmarshal(t *testing.T) {
+	input := `{"action":"apply","manifest":{"kind":"Pod","metadata":{"name":"nginx"}},"resource":"pods","name":"nginx","namespace":"default","cluster_id":"c1"}`
+	var op Operation
+	require.NoError(t, json.Unmarshal([]byte(input), &op))
+	assert.Equal(t, "apply", op.Action())
+	assert.Equal(t, "pods", op.Resource())
+	assert.Equal(t, "nginx", op.name)
+	assert.Equal(t, "default", op.Namespace())
+	assert.Equal(t, "c1", op.clusterID)
+	assert.Equal(t, "Pod", op.Kind(), "kind should be derived from manifest")
+}
+
+func TestOperation_JSONMarshal(t *testing.T) {
+	manifest := map[string]any{"kind": "Pod"}
+	op := Operation{
+		action:   "delete",
+		resource: "pods",
+		name:     "nginx",
+		manifest: &manifest,
+	}
+	b, err := json.Marshal(op)
+	require.NoError(t, err)
+	var roundTrip Operation
+	require.NoError(t, json.Unmarshal(b, &roundTrip))
+	assert.Equal(t, op.Action(), roundTrip.Action())
+	assert.Equal(t, op.Resource(), roundTrip.Resource())
+	assert.Equal(t, op.name, roundTrip.name)
 }
