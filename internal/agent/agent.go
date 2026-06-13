@@ -71,6 +71,13 @@ type transcriptMessage struct {
 // non-retryable stream error, context cancellation, or store
 // failure).
 //
+// The outer loop calls Client.Chat repeatedly: the LLM may respond
+// with a tool call, the runner dispatches the handler synchronously
+// (plan/ask block inside the handler), the tool result is appended
+// to the transcript, and Chat is called again. The loop terminates
+// when the LLM produces a final message (no tool calls) or when an
+// error is encountered.
+//
 // On clean completion, all messages generated during the turn
 // (assistant + tool) are batch-inserted to the store as a single
 // transaction, keyed by the session id.
@@ -85,7 +92,6 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 		// Wire the events channel as the default emit sink so
 		// tool handlers (plan / ask) can surface their events.
 		r.Deps.Emit = func(e Event) { r.Events <- e }
-		r.Deps.Session = r.Session
 	}
 	if r.Deps.Session == nil {
 		r.Deps.Session = r.Session
@@ -104,85 +110,117 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 		maxRetries = 1
 	}
 
-	// pendingAssistantParts accumulates the assistant turn's content
-	// for batch insert at message_end.
-	var pendingAssistant []llm.ContentPart
-	// pendingToolResults accumulates tool results to be persisted
-	// alongside the assistant message.
-	var pendingToolResults []llm.ContentPart
+	// outerStep guards against pathological infinite loops where the
+	// LLM keeps calling tools without ever producing a final
+	// message. 32 steps is well above any realistic agent run.
+	const outerStepLimit = 32
+	// turnAssistant / turnToolResults accumulate the entire turn's
+	// content across outer steps. They're appended to on every step
+	// and persisted in one batch when the turn ends.
+	var (
+		turnAssistant    []llm.ContentPart
+		turnToolResults  []llm.ContentPart
+		turnHasToolCalls bool
+	)
+	for step := 0; step < outerStepLimit; step++ {
+		// pendingAssistant / pendingToolResults are populated by
+		// consumeStream for this one Chat call.
+		var pendingAssistant []llm.ContentPart
+		var pendingToolResults []llm.ContentPart
+		var streamErr error
+		var hadToolCall bool
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// History truncation happens before every Chat call so the
-		// transcript fits the model's context window.
-		msgs = r.truncate(msgs)
-
-		stream, err := r.Client.Chat(ctx, toLLMMessages(msgs), r.Tools)
-		if err != nil {
-			if isRetryable(err) && attempt < maxRetries {
-				time.Sleep(retryBackoff(attempt))
-				continue
-			}
-			_ = r.emitError("llm_error", err.Error(), isRetryable(err))
-			return err
-		}
-
-		// consumedErr captures any non-fatal stream error (e.g.
-		// transport error mid-stream). A nil err with io.EOF means
-		// the stream ended cleanly; a non-nil err is fatal.
-		streamErr := r.consumeStream(ctx, stream, &pendingAssistant, &pendingToolResults)
-		_ = stream.Close()
-
-		if streamErr == nil {
-			// Clean end. Batch insert assistant + tool messages.
-			if r.Store != nil {
-				if err := r.persistTurn(ctx, pendingAssistant, pendingToolResults); err != nil {
-					_ = r.emitError("store_error", err.Error(), true)
-					return err
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			msgs = r.truncate(msgs)
+			stream, err := r.Client.Chat(ctx, toLLMMessages(msgs), r.Tools)
+			if err != nil {
+				if isRetryable(err) && attempt < maxRetries {
+					time.Sleep(retryBackoff(attempt))
+					continue
 				}
+				_ = r.emitError("llm_error", err.Error(), isRetryable(err))
+				return err
 			}
-			return nil
+			hadToolCall, streamErr = r.consumeStream(ctx, stream, &pendingAssistant, &pendingToolResults)
+			_ = stream.Close()
+			break // consumeStream handles its own retries via its caller (Run outer loop)
 		}
 
-		// Stream error: classify, decide whether to retry.
-		if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
+		// If the stream errored terminally, classify and return.
+		if streamErr != nil {
+			if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
+				return streamErr
+			}
+			_ = r.emitError("llm_error", streamErr.Error(), isRetryable(streamErr))
 			return streamErr
 		}
-		if isRetryable(streamErr) && attempt < maxRetries {
-			time.Sleep(retryBackoff(attempt))
-			// Reset pending accumulators — the next call will
-			// rebuild them. The previous partial assistant turn
-			// is dropped (the LLM can regenerate).
-			pendingAssistant = nil
-			pendingToolResults = nil
+
+		// Accumulate this step into the turn-wide buffers.
+		if len(pendingAssistant) > 0 {
+			turnAssistant = append(turnAssistant, pendingAssistant...)
+		}
+		for _, p := range pendingToolResults {
+			turnToolResults = append(turnToolResults, p)
+		}
+		if hadToolCall {
+			turnHasToolCalls = true
+		}
+
+		// Append the assistant message + any tool results to the
+		// in-memory transcript. The LLM will see this on the next
+		// Chat call.
+		if len(pendingAssistant) > 0 {
+			msgs = append(msgs, transcriptMessage{Role: llm.RoleAssistant, Parts: pendingAssistant})
+		}
+		for _, p := range pendingToolResults {
+			msgs = append(msgs, transcriptMessage{Role: llm.RoleTool, Parts: []llm.ContentPart{p}})
+		}
+
+		// If the LLM called a tool this turn, loop again so the
+		// model sees the tool result.
+		if hadToolCall {
 			continue
 		}
-		_ = r.emitError("llm_error", streamErr.Error(), isRetryable(streamErr))
-		return streamErr
+
+		// Final turn: persist and return. The persisted batch
+		// includes any earlier steps' tool calls/results so a
+		// future reload can replay the full turn.
+		_ = turnHasToolCalls
+		if r.Store != nil {
+			if err := r.persistTurn(ctx, turnAssistant, turnToolResults); err != nil {
+				_ = r.emitError("store_error", err.Error(), true)
+				return err
+			}
+		}
+		return nil
 	}
-	return errors.New("agent.Run: exhausted retries")
+	return errors.New("agent.Run: outer step limit exceeded")
 }
 
-// consumeStream pulls events from stream until io.EOF, an error, or a
-// message_end. It accumulates the assistant turn's content into
-// pendingAssistant and tool results into pendingToolResults so the
-// caller can persist them in one batch.
+// consumeStream pulls events from stream until io.EOF, a stream
+// error, or a message_end. It accumulates the assistant turn's
+// content into pendingAssistant and tool results into
+// pendingToolResults so the caller can persist them in one batch.
 //
-// Returns the stream's terminal error (nil on clean end), or
-// context.Canceled / context.DeadlineExceeded if the run was
-// cancelled while blocking on plan / ask.
+// Returns (hadToolCall=true, err=nil) if any tool was dispatched in
+// this stream (the caller will loop back and call Chat again with
+// the tool result in the transcript). Returns (false, nil) on a
+// clean message_end with no tool calls (final assistant turn).
+// Returns (false, err) on any error.
 func (r *Runner) consumeStream(
 	ctx context.Context,
 	stream llm.Stream,
 	pendingAssistant *[]llm.ContentPart,
 	pendingToolResults *[]llm.ContentPart,
-) error {
+) (bool, error) {
+	hadToolCall := false
 	for {
 		ev, err := stream.Next(ctx)
 		if errors.Is(err, io.EOF) {
-			return nil
+			return hadToolCall, nil
 		}
 		if err != nil {
-			return err
+			return hadToolCall, err
 		}
 		switch ev.Type {
 		case llm.EventToken:
@@ -192,6 +230,7 @@ func (r *Runner) consumeStream(
 			r.emit(EventReasoning, Reasoning{Text: ev.Text})
 			*pendingAssistant = append(*pendingAssistant, llm.ContentPart{Type: "reasoning", Text: ev.Text})
 		case llm.EventToolCall:
+			hadToolCall = true
 			// Emit the tool_call event first so the frontend can
 			// render the in-flight call, then dispatch the handler.
 			r.emit(EventToolCall, ToolCall{ID: ev.Call.ID, Name: ev.Call.Name, Input: ev.Call.Input})
@@ -212,19 +251,14 @@ func (r *Runner) consumeStream(
 					Output:     errStr,
 					IsError:    true,
 				})
-				// The handler also surfaced its own events
-				// (plan/ask). We continue the loop so the LLM
-				// sees the tool result and can produce the
-				// follow-up message.
 				continue
 			}
 			// output may be nil for tools that don't return
-			// content (rare). Treat as empty string.
+			// content (rare). Treat as empty object.
 			out := string(output)
 			if out == "" {
 				out = "{}"
 			}
-			// Wrap as RawMessage for the event payload.
 			raw := json.RawMessage(out)
 			if !json.Valid(raw) {
 				raw = json.RawMessage(`"` + jsonEscape(out) + `"`)
@@ -236,16 +270,14 @@ func (r *Runner) consumeStream(
 				ToolName:   ev.Call.Name,
 				Output:     out,
 			})
-		case llm.EventPlanReady:
-			// Some fantasy providers can surface plan-like events
-			// through a separate stream part; for now we always
-			// emit plan / confirm from the tool handler. Ignore.
 		case llm.EventMessageEnd:
 			r.emit(EventMessageEnd, MessageEnd{InputTokens: ev.In, OutputTokens: ev.Out})
-			return nil
+			return hadToolCall, nil
 		case llm.EventError:
-			r.emit(EventError, ErrorPayload{Code: "stream_error", Message: ev.Reason, Retryable: false})
-			return errors.New(ev.Reason)
+			// The outer Run loop will emit a single classified
+			// ErrorPayload (with Retryable set) after seeing
+			// the returned error. Don't double-emit here.
+			return hadToolCall, errors.New(ev.Reason)
 		default:
 			// Unknown event type: ignore (forward-compatible with
 			// future additions).
