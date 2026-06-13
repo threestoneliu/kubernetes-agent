@@ -2,12 +2,13 @@
 
 ## 1. 项目脚手架
 
-- [ ] 1.1 初始化 `go.mod`(`module github.com/threestoneliu/kubernetes-agent`),声明 Go 1.22+
-- [ ] 1.2 建立目录结构:`cmd/server/`、`internal/{server,agent,tools,policy,store,crypto,llm,config,logging}/`、`web/`、`configs/`
-- [ ] 1.3 写 `cmd/server/main.go` 最小骨架:解析 CLI 参数、加载 config、调用 `slog.SetDefault`、启动占位 HTTP server
-- [ ] 1.4 创建 `internal/config`:YAML 解析 + `${ENV}` 展开 + 默认值(server.host/port、storage.db_path、llm.{default,providers}、logging)
-- [ ] 1.5 创建 `internal/logging`:封装 `slog` JSON/text 输出,按 `logging.level` 过滤
-- [ ] 1.6 添加 `configs/config.example.yaml` 完整示例
+- [x] 1.1 初始化 `go.mod`(`module github.com/threestoneliu/kubernetes-agent`),声明 Go 1.22+
+- [x] 1.2 建立目录结构:`cmd/server/`、`internal/{server,agent,tools,policy,store,crypto,llm,config,logging}/`、`web/`、`configs/`
+- [x] 1.3 写 `cmd/server/main.go` 最小骨架:解析 CLI 参数、加载 config、调用 `slog.SetDefault`、启动占位 HTTP server
+- [x] 1.4 创建 `internal/config`:YAML 解析 + `${ENV}` 展开 + 默认值(server.host/port、storage.db_path、llm.{default,providers}、logging)
+- [x] 1.5 创建 `internal/logging`:封装 `slog` JSON/text 输出,按 `logging.level` 过滤
+- [x] 1.6 添加 `configs/config.example.yaml` 完整示例
+- [x] 1.7 (review fix) `expandHome` + `defaultPath` 错误处理
 
 ## 2. 存储层
 
@@ -57,24 +58,24 @@
 
 ## 7. LLM 抽象
 
-- [ ] 7.1 创建 `internal/llm/provider.go`:统一接口 `Chat(ctx, messages, tools) (Stream, error)`,Stream 提供 `Next() (Event, error)`
-- [ ] 7.2 创建 anthropic / openai / openai-compatible 三个 adapter,经由 `charmbracelet/fantasy` 构造 client
-- [ ] 7.3 创建 `internal/llm/ping.go`:启动期并发 ping(发最小 messages 列表 + 1 秒超时),失败标 `disabled`
-- [ ] 7.4 创建 `internal/llm/prompt.go`:system prompt 模板(身份 + 工具集 + 写工作流 + 风格约束 + 默认中文)
-- [ ] 7.5 写 ping 测试:用 `httptest.Server` 模拟 provider 端点
+- [x] 7.1 创建 `internal/llm/provider.go`:统一接口 `Chat(ctx, messages, tools) (Stream, error)`,Stream 提供 `Next() (Event, error)`
+- [x] 7.2 创建 anthropic / openai / openai-compatible 三个 adapter,经由 `charmbracelet/fantasy` 构造 client
+- [x] 7.3 创建 `internal/llm/ping.go`:启动期并发 ping(发最小 messages 列表 + 1 秒超时),失败标 `disabled`
+- [x] 7.4 创建 `internal/llm/prompt.go`:system prompt 模板(身份 + 工具集 + 写工作流 + 风格约束 + 默认中文)
+- [x] 7.5 写 ping 测试:用 `httptest.Server` 模拟 provider 端点
 
 ## 8. Agent 循环
 
-- [ ] 8.1 创建 `internal/agent/events.go`:12 个 SSE 事件类型 + JSON 序列化
-- [ ] 8.2 创建 `internal/agent/tools.go`:把 6 个工具注册为 fantasy 的 tool(每个工具签名 = (name, description, json_schema, handler))
-- [ ] 8.3 创建 `internal/agent/agent.go`:agent 循环主体 — 调用 fantasy stream → 解析每条 event → 翻译为 SSE event 推给 HTTP 层
-- [ ] 8.4 创建 `internal/agent/session.go`:会话状态管理(消息列表 + plan 缓存 + last_event_id)
-- [ ] 8.5 实现"流式期间 token 累积在内存,message_end 一次性入库"
-- [ ] 8.6 实现 `plan_awaiting_confirm` 阻塞:agent 循环在推完该事件后 MUST 暂停,等用户事件(resume token)
-- [ ] 8.7 实现 `ask_user` 阻塞:同上
-- [ ] 8.8 实现 LLM 错误重试:401/403 不重试,429 + 5xx 重试 1 次(指数退避 1s)
-- [ ] 8.9 实现历史截断:token 数 ≥ 80% context window 时丢最旧非 system 消息
-- [ ] 8.10 写 agent 循环测试:mock fantasy client(注入假 LLM 响应序列),验证事件序列与 plan 阻塞语义
+- [x] 8.1 创建 `internal/agent/events.go`:12 个 SSE 事件类型 + JSON 序列化
+- [x] 8.2 创建 `internal/agent/tools.go`:把 6 个工具注册为 fantasy 的 tool(每个工具签名 = (name, description, json_schema, handler))
+- [x] 8.3 创建 `internal/agent/agent.go`:agent 循环主体 — 调用 fantasy stream → 解析每条 event → 翻译为 SSE event 推给 HTTP 层
+- [x] 8.4 创建 `internal/agent/session.go`:会话状态管理(消息列表 + plan 缓存 + last_event_id)
+- [x] 8.5 实现"流式期间 token 累积在内存,message_end 一次性入库"
+- [x] 8.6 实现 `plan_awaiting_confirm` 阻塞:agent 循环在推完该事件后 MUST 暂停,等用户事件(resume token)
+- [x] 8.7 实现 `ask_user` 阻塞:同上
+- [x] 8.8 实现 LLM 错误重试:401/403 不重试,429 + 5xx 重试 1 次(指数退避 1s)
+- [x] 8.9 实现历史截断:token 数 ≥ 80% context window 时丢最旧非 system 消息
+- [x] 8.10 写 agent 循环测试:mock fantasy client(注入假 LLM 响应序列),验证事件序列与 plan 阻塞语义
 
 ## 9. HTTP 层
 

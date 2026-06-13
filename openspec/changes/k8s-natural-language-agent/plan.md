@@ -1840,7 +1840,7 @@ git commit -m "feat(llm): provider interface + ping + system prompt"
 - Create: `internal/agent/session.go`
 - Create: `internal/agent/agent_test.go`
 
-- [ ] **Step 8.1: 写 events 定义**
+- [x] **Step 8.1: 写 events 定义**
 
 Create `internal/agent/events.go`:
 
@@ -1863,7 +1863,7 @@ func NewEvent(t string, v any) (Event, error) {
 }
 ```
 
-- [ ] **Step 8.2: 写 12 个事件 payload struct**
+- [x] **Step 8.2: 写 12 个事件 payload struct**
 
 ```go
 type SessionMeta struct{ SessionID, ClusterID string }
@@ -1891,7 +1891,7 @@ type MessageEnd struct{ InputTokens, OutputTokens int }
 
 (此文件 `events.go` 包含 NewEvent + 12 个 payload struct。)
 
-- [ ] **Step 8.3: 写 tools 注册(把 6 个工具包装成 fantasy tool)**
+- [x] **Step 8.3: 写 tools 注册(把 6 个工具包装成 fantasy tool)**
 
 Create `internal/agent/tools.go`:
 
@@ -1917,7 +1917,7 @@ type ToolRegistrar interface {
 
 (`ToolRegistrar` 是对 fantasy 注册 API 的抽象;实际类型在实施时按 fantasy 文档替换。)
 
-- [ ] **Step 8.4: 写 agent 循环主体**
+- [x] **Step 8.4: 写 agent 循环主体**
 
 Create `internal/agent/agent.go`:
 
@@ -2020,7 +2020,7 @@ type StoredMessage struct {
 }
 ```
 
-- [ ] **Step 8.5: 写 session 管理**
+- [x] **Step 8.5: 写 session 管理**
 
 Create `internal/agent/session.go`:
 
@@ -2050,7 +2050,7 @@ func (s *Session) AnswerAsk(a string) {
 }
 ```
 
-- [ ] **Step 8.6: 写 agent 测试(mock LLM 注入事件序列)**
+- [x] **Step 8.6: 写 agent 测试(mock LLM 注入事件序列)**
 
 Create `internal/agent/agent_test.go`:
 
@@ -2089,7 +2089,7 @@ func TestRunner_TokenThenEnd(t *testing.T) {
 
 (完整 mock 与断言在实施时展开。)
 
-- [ ] **Step 8.7: 跑测试 + Commit**
+- [x] **Step 8.7: 跑测试 + Commit**
 
 Run: `go test ./internal/agent/...`
 Then:
