@@ -28,14 +28,23 @@ func staticHandler() http.Handler {
 		upath := strings.TrimPrefix(r.URL.Path, "/")
 		if upath == "" {
 			upath = "index.html"
-		}
-		if _, err := fs.Stat(sub, upath); err != nil {
-			// SPA fallback
-			upath = "index.html"
+		} else {
+			if _, err := fs.Stat(sub, upath); err != nil {
+				// SPA fallback
+				upath = "index.html"
+			}
 		}
 		setCacheHeaders(w, upath)
 		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/" + upath
+		// When the target is index.html, point the FileServer at
+		// the directory root so it resolves the index without
+		// redirecting (FileServer 301s /index.html → /index.html/
+		// because it treats it as an index candidate).
+		if upath == "index.html" {
+			r2.URL.Path = "/"
+		} else {
+			r2.URL.Path = "/" + upath
+		}
 		files.ServeHTTP(w, r2)
 	})
 }
