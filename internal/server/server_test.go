@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,40 +26,8 @@ import (
 	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
 
-// stubRunnerFactory lets tests inject a pre-scripted sequence of
-// events into the chat handler. The returned Runner is wired with
-// a fresh in-memory Session + the same events channel the handler
-// will drain, mirroring the production handler's setup.
-type stubRunnerFactory struct {
-	mu      sync.Mutex
-	scripts map[string][]agent.Event // keyed by sessionID
-}
-
-func (f *stubRunnerFactory) NewRunner(sessionID, clusterID string) *agent.Runner {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	events := make(chan agent.Event, 64)
-	r := &agent.Runner{
-		Client:  noopClient{},
-		Store:   noopMsgStore{},
-		Events:  events,
-		Session: agent.NewSession(sessionID),
-	}
-	if clusterID != "" {
-		r.Session.ClusterID = clusterID
-	}
-	script := f.scripts[sessionID]
-	go func() {
-		defer close(events)
-		for _, e := range script {
-			events <- e
-		}
-	}()
-	return r
-}
-
-// noopClient satisfies llm.Client; Run never actually calls it
-// because the stub script pushes events directly on the channel.
+// noopClient satisfies llm.Client; the stubbed run never calls it
+// because the script pushes events directly on the channel.
 type noopClient struct{}
 
 func (noopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.Tool) (llm.Stream, error) {
@@ -69,8 +36,8 @@ func (noopClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.
 
 type noopStream struct{}
 
-func (noopStream) Next(ctx context.Context) (llm.Event, error)             { return llm.Event{}, io.EOF }
-func (noopStream) Close() error                                            { return nil }
+func (noopStream) Next(ctx context.Context) (llm.Event, error) { return llm.Event{}, io.EOF }
+func (noopStream) Close() error                                { return nil }
 
 // noopMsgStore satisfies the agent.MessageStore interface the
 // runner needs. The stubbed run never reaches persistence, so the
@@ -81,10 +48,10 @@ func (noopMsgStore) BatchInsertMessages(ctx context.Context, msgs []store.Messag
 	return nil
 }
 
-// testDeps builds a Deps wired to a fresh in-memory SQLite DB and
-// a real AEAD. The LLM registry and k8s factory are filled in by
-// individual tests. RunnerFactory defaults to a stub that produces
-// no events; callers that need a different script can override.
+// testDeps builds a Deps wired to a fresh SQLite file, a real
+// AEAD, and an empty RunnerFactory. Tests that exercise the chat
+// handler must replace RunnerFactory with a scriptedRunnerFactory
+// that has a session-id-keyed event sequence.
 func testDeps(t *testing.T) Deps {
 	t.Helper()
 	dir := t.TempDir()
@@ -101,16 +68,13 @@ func testDeps(t *testing.T) Deps {
 	require.NoError(t, err)
 
 	factory := k8s.NewClientFactory(db, aead)
-
-	_ = os.Setenv("KUBERNETES_AGENT_NO_PING", "1")
-	_ = os.Unsetenv("KUBERNETES_AGENT_NO_PING")
 	return Deps{
 		DB:            db,
 		AEAD:          aead,
 		Engine:        &policy.Engine{Rules: policy.DefaultRules()},
 		LLM:           &llm.Registry{},
 		Factory:       factory,
-		RunnerFactory: &stubRunnerFactory{},
+		RunnerFactory: &scriptedRunnerFactory{},
 	}
 }
 
@@ -300,6 +264,18 @@ func TestSessions_CreateAndList(t *testing.T) {
 	resp.Body.Close()
 	require.Len(t, listResp.Sessions, 1)
 	assert.Equal(t, created.ID, listResp.Sessions[0].ID)
+
+	// GET /api/sessions/{id}/messages returns an empty list for
+	// a fresh session.
+	resp, err = http.Get(ts.URL + "/api/sessions/" + created.ID + "/messages")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var msgResp struct {
+		Messages []messageView `json:"messages"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&msgResp))
+	resp.Body.Close()
+	assert.Empty(t, msgResp.Messages)
 }
 
 // --- /api/chat SSE ---
