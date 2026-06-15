@@ -169,3 +169,16 @@ func (m *SessionManager) Drop(id string) {
 	defer m.mu.Unlock()
 	delete(m.sessions, id)
 }
+
+// Set replaces (or installs) the session for id with the supplied
+// pointer. Used by the chatHandler at the start of each turn so the
+// manager points at the same Session the runner is using — the
+// runner's channels (ResumePlan / ResumeAsk) are the ones the resume
+// endpoint must close to unblock the agent loop. A previous turn's
+// session is silently overwritten; the HTTP layer is expected to
+// have finished draining its SSE stream before the next turn starts.
+func (m *SessionManager) Set(id string, s *Session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions[id] = s
+}

@@ -71,3 +71,18 @@ func TestSessionManager_Drop(t *testing.T) {
 	_, err := m.Lookup("s1")
 	assert.ErrorIs(t, err, ErrSessionNotFound)
 }
+
+// TestSessionManager_SetReplaces verifies that Set installs the
+// caller-supplied Session, overwriting any prior entry under the
+// same id. The chatHandler relies on this so the manager points at
+// the same Session the runner is using.
+func TestSessionManager_SetReplaces(t *testing.T) {
+	m := NewSessionManager()
+	original := m.Get("s1")
+	replacement := NewSession("s1")
+	m.Set("s1", replacement)
+	got, err := m.Lookup("s1")
+	require.NoError(t, err)
+	assert.Same(t, replacement, got)
+	assert.NotSame(t, original, got)
+}

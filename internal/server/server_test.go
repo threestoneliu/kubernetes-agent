@@ -75,6 +75,7 @@ func testDeps(t *testing.T) Deps {
 		LLM:           &llm.Registry{},
 		Factory:       factory,
 		RunnerFactory: &scriptedRunnerFactory{},
+		Sessions:      agent.NewSessionManager(),
 	}
 }
 
@@ -335,6 +336,139 @@ func TestChat_MissingMessage(t *testing.T) {
 	assert.Equal(t, "validation_error", errResp.Code)
 	assert.Contains(t, errResp.Message, "message is required")
 	assert.False(t, errResp.Retryable)
+}
+
+// --- /api/sessions/{id}/resume ---
+
+// TestResume_PlanConfirm verifies that POST /resume with
+// kind="plan", approved=true closes the session's ResumePlan
+// channel and returns 204. We register a session manually rather
+// than going through the chat handler (which would require an
+// event-loop collaboration).
+func TestResume_PlanConfirm(t *testing.T) {
+	d := testDeps(t)
+	ts := httptest.NewServer(NewRouter(d))
+	defer ts.Close()
+
+	sess := agent.NewSession("s-1")
+	d.Sessions.Set("s-1", sess)
+
+	// Concurrently wait for the confirm to land — proves the
+	// channel was actually closed by the handler.
+	waited := make(chan error, 1)
+	go func() {
+		waited <- sess.WaitPlan(t.Context())
+	}()
+
+	body := bytes.NewReader([]byte(`{"kind": "plan", "plan_id": "p1", "approved": true}`))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/sessions/s-1/resume", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	select {
+	case err := <-waited:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("WaitPlan did not return after confirm")
+	}
+	assert.Equal(t, "confirmed", sess.PlanResult)
+}
+
+// TestResume_PlanCancel mirrors PlanConfirm but with approved=false;
+// we expect PlanResult to be "cancelled".
+func TestResume_PlanCancel(t *testing.T) {
+	d := testDeps(t)
+	ts := httptest.NewServer(NewRouter(d))
+	defer ts.Close()
+
+	sess := agent.NewSession("s-2")
+	d.Sessions.Set("s-2", sess)
+
+	waited := make(chan error, 1)
+	go func() {
+		waited <- sess.WaitPlan(t.Context())
+	}()
+
+	body := bytes.NewReader([]byte(`{"kind": "plan", "plan_id": "p1", "approved": false}`))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/sessions/s-2/resume", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("WaitPlan did not return after cancel")
+	}
+	assert.Equal(t, "cancelled", sess.PlanResult)
+}
+
+// TestResume_AskUserAnswer verifies that an ask_user answer unblocks
+// WaitAsk and the answer is stored on the session.
+func TestResume_AskUserAnswer(t *testing.T) {
+	d := testDeps(t)
+	ts := httptest.NewServer(NewRouter(d))
+	defer ts.Close()
+
+	sess := agent.NewSession("s-3")
+	d.Sessions.Set("s-3", sess)
+
+	waited := make(chan error, 1)
+	go func() {
+		waited <- sess.WaitAsk(t.Context())
+	}()
+
+	body := bytes.NewReader([]byte(`{"kind": "ask_user", "answer": "yes please"}`))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/sessions/s-3/resume", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	resp.Body.Close()
+
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("WaitAsk did not return after answer")
+	}
+	assert.Equal(t, "yes please", sess.AskAnswer)
+}
+
+// TestResume_UnknownSession returns 404 for an id the manager has
+// never seen. Mirrors the "your plan expired" UX.
+func TestResume_UnknownSession(t *testing.T) {
+	d := testDeps(t)
+	ts := httptest.NewServer(NewRouter(d))
+	defer ts.Close()
+
+	body := bytes.NewReader([]byte(`{"kind": "plan", "plan_id": "p1", "approved": true}`))
+	resp, err := http.Post(ts.URL+"/api/sessions/never/resume", "application/json", body)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+
+	var errResp errorResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&errResp))
+	assert.Equal(t, "not_found", errResp.Code)
+}
+
+// TestResume_BadKind returns 400 when the body kind is unknown.
+func TestResume_BadKind(t *testing.T) {
+	d := testDeps(t)
+	d.Sessions.Set("s-4", agent.NewSession("s-4"))
+	ts := httptest.NewServer(NewRouter(d))
+	defer ts.Close()
+
+	body := bytes.NewReader([]byte(`{"kind": "nope"}`))
+	resp, err := http.Post(ts.URL+"/api/sessions/s-4/resume", "application/json", body)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 // --- helpers ---

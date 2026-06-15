@@ -28,6 +28,11 @@ type Deps struct {
 	// It is an interface (not the concrete *agent.Runner) so tests
 	// can inject stub runners without wiring up an llm.Client.
 	RunnerFactory RunnerFactory
+	// Sessions tracks active in-flight agent.Session values so the
+	// /resume endpoint can unblock a plan confirm or ask_user
+	// response. The chatHandler registers each new session here
+	// before kicking off the runner goroutine.
+	Sessions *agent.SessionManager
 }
 
 // RunnerFactory returns a ready-to-Run agent.Runner. The chat
@@ -67,6 +72,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/", createSessionHandler(d))
 		r.Get("/{id}", getSessionHandler(d))
 		r.Get("/{id}/messages", listMessagesHandler(d))
+		r.Post("/{id}/resume", resumeHandler(d))
 	})
 	return r
 }

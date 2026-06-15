@@ -126,6 +126,15 @@ func chatHandler(d Deps) http.HandlerFunc {
 		if req.ClusterID != "" {
 			runner.Session.ClusterID = req.ClusterID
 		}
+		// Register the live session so the /resume endpoint can
+		// unblock a pending plan confirm or ask_user response.
+		// Without this, the UI's PlanModal cannot release the agent
+		// loop. Use Set (not Get) so the manager points at the
+		// runner's own Session — otherwise the resume endpoint
+		// would close channels that nobody is waiting on.
+		if d.Sessions != nil {
+			d.Sessions.Set(resolvedID, runner.Session)
+		}
 
 		done := make(chan struct{})
 		go func() {
