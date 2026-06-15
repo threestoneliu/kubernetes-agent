@@ -110,10 +110,10 @@
 
 ## 12. 嵌入与单二进制
 
-- [ ] 12.1 Go 端 `embed.FS` 引入 `web/dist` 全部产物
-- [ ] 12.2 `GET /*` fallback handler:命中非 `/api` 与非 `/healthz` 的请求 → 返回 `index.html`(SPA 路由兜底)
-- [ ] 12.3 静态资源 cache-control:hash 命名的 chunk 永久缓存,`index.html` 不缓存
-- [ ] 12.4 验证:`go build` 产出单二进制,运行后浏览器访问 `http://127.0.0.1:8080` 完整可用
+- [x] 12.1 Go 端 `embed.FS` 引入 `web/dist` 全部产物
+- [x] 12.2 `GET /*` fallback handler:命中非 `/api` 与非 `/healthz` 的请求 → 返回 `index.html`(SPA 路由兜底)
+- [x] 12.3 静态资源 cache-control:hash 命名的 chunk 永久缓存,`index.html` 不缓存
+- [x] 12.4 验证:`go build` 产出单二进制,运行后浏览器访问 `http://127.0.0.1:8080` 完整可用
 
 ## 13. 测试与端到端验证
 
