@@ -48,6 +48,9 @@ func run() error {
 	defer func() { _ = db.Close() }()
 
 	deps := buildDeps(cfg, db, aead)
+	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+	deps.LLM.Health = llm.PingAll(pingCtx, deps.LLM.Providers, 1)
+	pingCancel()
 	router := server.NewRouter(deps)
 
 	addr := net.JoinHostPort(cfg.Server.Host, fmt.Sprintf("%d", cfg.Server.Port))

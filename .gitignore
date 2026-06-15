@@ -44,6 +44,7 @@ web/.vite/
 
 # Go-built single binary (make build)
 kubernetes-agent
+/server
 
 # Embedded SPA staging dir; populated by `make copy-web` before
 # `go build`. //go:embed cannot reach web/dist/ from
