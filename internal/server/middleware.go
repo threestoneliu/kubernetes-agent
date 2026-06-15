@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,8 +32,16 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 // loggerMiddleware emits a single slog line per request, after the
 // handler returns so the status code is final. Format mirrors the
 // common access-log shape: method, path, status, duration, request id.
+//
+// Embedded static assets (the SPA's hashed JS/CSS chunks and
+// index.html) are skipped — logging every .js chunk on page load
+// drowns out the API traffic we actually want to see.
 func loggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		start := time.Now()
 		ww := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(ww, r)

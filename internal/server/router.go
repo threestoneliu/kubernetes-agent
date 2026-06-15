@@ -74,5 +74,12 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/{id}/messages", listMessagesHandler(d))
 		r.Post("/{id}/resume", resumeHandler(d))
 	})
+
+	// SPA fallback is mounted last so the explicit /api/* and
+	// /healthz routes above take precedence. Anything not matched
+	// by an earlier route is served by staticHandler, which
+	// resolves to either a real file or index.html for client-side
+	// routing.
+	r.Handle("/*", staticHandler())
 	return r
 }
