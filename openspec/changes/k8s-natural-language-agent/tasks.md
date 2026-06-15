@@ -80,15 +80,15 @@
 
 ## 9. HTTP 层
 
-- [ ] 9.1 创建 `internal/server/router.go`:用 `go-chi/chi/v5` 注册路由
-- [ ] 9.2 写 `GET /healthz` handler:返回 `{ ok: bool, providers: [{name, status}] }`
-- [ ] 9.3 写 `POST /api/chat` SSE handler:接收 `{session_id, message, cluster_id}`,调 agent 循环,SSE 推流
-- [ ] 9.4 写 `GET /api/clusters` / `POST /api/clusters` / `DELETE /api/clusters/{id}`:含上传 kubeconfig 时解析 + 加密落库
-- [ ] 9.5 写 `GET /api/policies` / `PUT /api/policies/{id}`:YAML 校验 + 写 audit_log
-- [ ] 9.6 写 `GET /api/sessions` / `POST /api/sessions` / `GET /api/sessions/{id}/messages`
-- [ ] 9.7 SSE 续传:支持 `Last-Event-ID` header,按 session_id + event_id 续推(plan_ready 后不重放)
-- [ ] 9.8 错误响应标准化:`{ code, message, retryable }`
-- [ ] 9.9 写 HTTP 测试:用 `httptest`,覆盖各 handler + SSE 流
+- [x] 9.1 创建 `internal/server/router.go`:用 `go-chi/chi/v5` 注册路由
+- [x] 9.2 写 `GET /healthz` handler:返回 `{ ok: bool, providers: [{name, status}] }`
+- [x] 9.3 写 `POST /api/chat` SSE handler:接收 `{session_id, message, cluster_id}`,调 agent 循环,SSE 推流
+- [x] 9.4 写 `GET /api/clusters` / `POST /api/clusters` / `DELETE /api/clusters/{id}`:含上传 kubeconfig 时解析 + 加密落库
+- [x] 9.5 写 `GET /api/policies` / `PUT /api/policies/{id}`:YAML 校验 + 写 audit_log
+- [x] 9.6 写 `GET /api/sessions` / `POST /api/sessions` / `GET /api/sessions/{id}/messages`
+- [x] 9.7 SSE 续传:支持 `Last-Event-ID` header,按 session_id + event_id 续推(plan_ready 后不重放)
+- [x] 9.8 错误响应标准化:`{ code, message, retryable }`
+- [x] 9.9 写 HTTP 测试:用 `httptest`,覆盖各 handler + SSE 流
 
 ## 10. Web UI 脚手架
 
