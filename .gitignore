@@ -41,3 +41,12 @@ go.work.sum
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Go-built single binary (make build)
+kubernetes-agent
+
+# Embedded SPA staging dir; populated by `make copy-web` before
+# `go build`. //go:embed cannot reach web/dist/ from
+# internal/server/, so the build copies the SPA next to the
+# embedding .go file. This dir is a build artifact, not source.
+internal/server/web_dist/
