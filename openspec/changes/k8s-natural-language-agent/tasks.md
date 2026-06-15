@@ -117,12 +117,12 @@
 
 ## 13. 测试与端到端验证
 
-- [ ] 13.1 `go test ./...` 全部通过,`internal/*` 行覆盖 ≥ 70%
-- [ ] 13.2 关键路径(policy / plan_write / execute_plan)覆盖 ≥ 90%
-- [ ] 13.3 手工 e2e:启动服务 → 上传 kubeconfig(可用 `kind` 起的本地集群或 `client-go` fake)→ 选 provider → 发送"列出 default namespace 的 pod" → 收到响应
-- [ ] 13.4 手工 e2e:发"删除 nginx deployment" → 看到 Plan 弹窗 → 确认 → 集群中 pod 被删
-- [ ] 13.5 手工 e2e:发"删除 kube-system 中任意 pod" → 看到拒绝原因
-- [ ] 13.6 手工 e2e:发问"目标 namespace?"(通过 ask_user 工具模拟)→ 表单渲染 → 答复 → 继续
+- [x] 13.1 `go test ./...` 全部通过,`internal/*` 行覆盖 ≥ 70%
+- [x] 13.2 关键路径(policy / plan_write / execute_plan)覆盖 ≥ 90%
+- [x] 13.3 手工 e2e:启动服务 → 上传 kubeconfig(可用 `kind` 起的本地集群或 `client-go` fake)→ 选 provider → 发送"列出 default namespace 的 pod" → 收到响应
+- [x] 13.4 手工 e2e:发"删除 nginx deployment" → 看到 Plan 弹窗 → 确认 → 集群中 pod 被删
+- [x] 13.5 手工 e2e:发"删除 kube-system 中任意 pod" → 看到拒绝原因
+- [x] 13.6 手工 e2e:发问"目标 namespace?"(通过 ask_user 工具模拟)→ 表单渲染 → 答复 → 继续
 
 ## 14. 文档
 
