@@ -44,7 +44,7 @@ type PlanOutput struct {
 // those that are not denied, runs a server-side dry-run to capture the
 // predicted diff. The returned PlanOutput can be persisted and later
 // re-evaluated for execution.
-func PlanWrite(ctx context.Context, f *ClientFactory, eng *policy.Engine, in PlanInput) (*PlanOutput, error) {
+func PlanWrite(ctx context.Context, f ClientFactory, eng *policy.Engine, in PlanInput) (*PlanOutput, error) {
 	planID := uuid.NewString()
 	out := &PlanOutput{PlanID: planID}
 	for _, op := range in.Operations {

@@ -21,7 +21,7 @@ type GetOutput struct {
 
 // Get fetches a single resource by name. Defaults namespace to "default"
 // when empty.
-func Get(ctx context.Context, f *ClientFactory, in GetInput) (*GetOutput, error) {
+func Get(ctx context.Context, f ClientFactory, in GetInput) (*GetOutput, error) {
 	if in.Namespace == "" {
 		in.Namespace = "default"
 	}

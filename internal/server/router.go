@@ -22,7 +22,7 @@ type Deps struct {
 	AEAD    *crypto.AEAD
 	Engine  *policy.Engine
 	LLM     *llm.Registry
-	Factory *k8s.ClientFactory
+	Factory k8s.ClientFactory
 	// RunnerFactory builds a *agent.Runner for a given session id
 	// and cluster id. The chat handler invokes it once per request.
 	// It is an interface (not the concrete *agent.Runner) so tests

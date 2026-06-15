@@ -19,7 +19,7 @@ import (
 // One ToolDeps instance is shared across the six handlers. The Runner
 // constructs it once when it starts a turn and passes it down.
 type ToolDeps struct {
-	Factory *k8s.ClientFactory
+	Factory k8s.ClientFactory
 	Engine  *policy.Engine
 	Store   *store.DB
 	Session *Session

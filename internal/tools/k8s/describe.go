@@ -26,7 +26,7 @@ type DescribeOutput struct {
 // Describe fetches a resource plus its related events, owner references,
 // and a small set of diagnosis hints derived from status conditions and
 // container states.
-func Describe(ctx context.Context, f *ClientFactory, in DescribeInput) (*DescribeOutput, error) {
+func Describe(ctx context.Context, f ClientFactory, in DescribeInput) (*DescribeOutput, error) {
 	if in.Namespace == "" {
 		in.Namespace = "default"
 	}

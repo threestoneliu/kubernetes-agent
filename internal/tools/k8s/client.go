@@ -11,22 +11,44 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// ClientFactory lazily decrypts a cluster's kubeconfig and caches the
-// resulting dynamic client. Concurrent calls are safe.
-type ClientFactory struct {
+// ClientFactory resolves a cluster id into a dynamic client. The
+// production implementation decrypts a kubeconfig from the store
+// and builds a real client; tests use a fake that hands out
+// pre-seeded clients without touching disk or the network.
+type ClientFactory interface {
+	Get(ctx context.Context, clusterID string) (*dynamic.DynamicClient, error)
+	// Invalidate drops the cached client for a cluster (e.g. after the
+	// user edits the cluster config). No-op for fakes.
+	Invalidate(clusterID string)
+}
+
+// KubeconfigClientFactory is the production ClientFactory: it
+// lazily decrypts a cluster's kubeconfig and caches the resulting
+// dynamic client. Concurrent calls are safe.
+type KubeconfigClientFactory struct {
 	db    *store.DB
 	aead  *crypto.AEAD
 	mu    sync.Mutex
 	cache map[string]*dynamic.DynamicClient
 }
 
-func NewClientFactory(db *store.DB, aead *crypto.AEAD) *ClientFactory {
-	return &ClientFactory{db: db, aead: aead, cache: map[string]*dynamic.DynamicClient{}}
+// NewKubeconfigClientFactory returns a ClientFactory backed by an
+// encrypted kubeconfig store.
+func NewKubeconfigClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClientFactory {
+	return &KubeconfigClientFactory{db: db, aead: aead, cache: map[string]*dynamic.DynamicClient{}}
+}
+
+// NewClientFactory is a thin alias kept for backwards compatibility
+// with existing callers (cmd/server, server tests) that constructed
+// a *ClientFactory directly. New code should use
+// NewKubeconfigClientFactory for clarity.
+func NewClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClientFactory {
+	return NewKubeconfigClientFactory(db, aead)
 }
 
 // Get returns a DynamicClient for the given cluster, decrypting and
 // parsing the kubeconfig on the first call per cluster.
-func (f *ClientFactory) Get(ctx context.Context, clusterID string) (*dynamic.DynamicClient, error) {
+func (f *KubeconfigClientFactory) Get(ctx context.Context, clusterID string) (*dynamic.DynamicClient, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if c, ok := f.cache[clusterID]; ok {
@@ -52,9 +74,8 @@ func (f *ClientFactory) Get(ctx context.Context, clusterID string) (*dynamic.Dyn
 	return dc, nil
 }
 
-// Invalidate drops the cached client for a cluster (e.g. after the user
-// edits the cluster config).
-func (f *ClientFactory) Invalidate(clusterID string) {
+// Invalidate drops the cached client for a cluster.
+func (f *KubeconfigClientFactory) Invalidate(clusterID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.cache, clusterID)

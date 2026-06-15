@@ -38,7 +38,7 @@ type ExecuteOutput struct {
 // PlanOutput (or a persisted plan record) into ExecutePlan and re-apply
 // the before-state for "apply" ops or re-create the resource for "delete"
 // ops.
-func ExecutePlan(ctx context.Context, f *ClientFactory, eng *policy.Engine, st *store.DB, in ExecuteInput, ops []Operation) (*ExecuteOutput, error) {
+func ExecutePlan(ctx context.Context, f ClientFactory, eng *policy.Engine, st *store.DB, in ExecuteInput, ops []Operation) (*ExecuteOutput, error) {
 	for _, op := range ops {
 		if eng.Evaluate(op) == policy.Deny {
 			return nil, fmt.Errorf("plan aborted: policy changed and op is now denied")
@@ -74,7 +74,7 @@ func ExecutePlan(ctx context.Context, f *ClientFactory, eng *policy.Engine, st *
 	return out, nil
 }
 
-func applyOne(ctx context.Context, f *ClientFactory, op Operation) error {
+func applyOne(ctx context.Context, f ClientFactory, op Operation) error {
 	dc, err := f.Get(ctx, op.clusterID)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func applyOne(ctx context.Context, f *ClientFactory, op Operation) error {
 	}
 }
 
-func rollbackOne(ctx context.Context, f *ClientFactory, op Operation) error {
+func rollbackOne(ctx context.Context, f ClientFactory, op Operation) error {
 	// Rollback strategy limitation: without the per-op "before" state we
 	// cannot symmetrically undo "apply" or re-create "delete". Return an
 	// error so the caller can surface the failure to the user. A future
