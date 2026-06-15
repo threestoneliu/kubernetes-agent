@@ -100,7 +100,7 @@ func applyOne(ctx context.Context, f ClientFactory, op Operation) error {
 	}
 }
 
-func rollbackOne(ctx context.Context, f ClientFactory, op Operation) error {
+func rollbackOne(_ context.Context, _ ClientFactory, op Operation) error {
 	// Rollback strategy limitation: without the per-op "before" state we
 	// cannot symmetrically undo "apply" or re-create "delete". Return an
 	// error so the caller can surface the failure to the user. A future
