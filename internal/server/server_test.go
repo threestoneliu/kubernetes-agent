@@ -67,6 +67,8 @@ func testDeps(t *testing.T) Deps {
 	aead, err := crypto.NewAEAD(key)
 	require.NoError(t, err)
 
+	require.NoError(t, db.SeedDefaultPolicies(context.Background()))
+
 	factory := k8s.NewClientFactory(db, aead)
 	return Deps{
 		DB:            db,
