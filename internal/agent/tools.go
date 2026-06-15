@@ -34,11 +34,17 @@ type ToolDeps struct {
 // hands to the LLM: k8s_get, k8s_list, k8s_describe, k8s_plan_write,
 // k8s_execute_plan, k8s_ask_user.
 //
+// d is taken by pointer so the returned tool handlers observe the
+// same ToolDeps the agent loop mutates — Run wires d.Emit and
+// d.Session lazily on the first Chat call, and the plan / ask
+// handlers need those mutations to surface events and block on
+// the per-session resume channels.
+//
 // Each handler's input is JSON of the tool's typed input struct (e.g.
 // k8s.GetInput). The agent loop deserialises the model's tool call
 // input and hands it to the handler. Handlers return JSON of the
 // corresponding output struct.
-func RegisterK8sTools(d ToolDeps) []llm.Tool {
+func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 	return []llm.Tool{
 		{
 			Name:        "k8s_get",

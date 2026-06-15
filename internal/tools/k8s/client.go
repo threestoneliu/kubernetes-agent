@@ -16,7 +16,7 @@ import (
 // and builds a real client; tests use a fake that hands out
 // pre-seeded clients without touching disk or the network.
 type ClientFactory interface {
-	Get(ctx context.Context, clusterID string) (*dynamic.DynamicClient, error)
+	Get(ctx context.Context, clusterID string) (dynamic.Interface, error)
 	// Invalidate drops the cached client for a cluster (e.g. after the
 	// user edits the cluster config). No-op for fakes.
 	Invalidate(clusterID string)
@@ -29,13 +29,13 @@ type KubeconfigClientFactory struct {
 	db    *store.DB
 	aead  *crypto.AEAD
 	mu    sync.Mutex
-	cache map[string]*dynamic.DynamicClient
+	cache map[string]dynamic.Interface
 }
 
 // NewKubeconfigClientFactory returns a ClientFactory backed by an
 // encrypted kubeconfig store.
 func NewKubeconfigClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClientFactory {
-	return &KubeconfigClientFactory{db: db, aead: aead, cache: map[string]*dynamic.DynamicClient{}}
+	return &KubeconfigClientFactory{db: db, aead: aead, cache: map[string]dynamic.Interface{}}
 }
 
 // NewClientFactory is a thin alias kept for backwards compatibility
@@ -46,9 +46,9 @@ func NewClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClientFactory 
 	return NewKubeconfigClientFactory(db, aead)
 }
 
-// Get returns a DynamicClient for the given cluster, decrypting and
-// parsing the kubeconfig on the first call per cluster.
-func (f *KubeconfigClientFactory) Get(ctx context.Context, clusterID string) (*dynamic.DynamicClient, error) {
+// Get returns a dynamic client for the given cluster, decrypting
+// and parsing the kubeconfig on the first call per cluster.
+func (f *KubeconfigClientFactory) Get(ctx context.Context, clusterID string) (dynamic.Interface, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if c, ok := f.cache[clusterID]; ok {

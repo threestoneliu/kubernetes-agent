@@ -176,16 +176,15 @@ func (rf *runnerFactory) NewRunner(sessionID, clusterID string) *agent.Runner {
 		// late-registered providers (tests) are picked up.
 		cli = pickDefaultClient(rf.registry, rf.defaultName)
 	}
-	deps := agent.ToolDeps{
-		Factory: rf.factory,
-		Engine:  rf.engine,
-		Store:   rf.db,
-	}
-	return &agent.Runner{
-		Client: cli,
-		Tools:  agent.RegisterK8sTools(deps),
-		Store:  rf.db,
-	}
+	// Build the runner first so the tool handlers (registered
+	// below) can observe the same ToolDeps the agent loop
+	// mutates — Run wires deps.Emit and deps.Session lazily
+	// on the first Chat call so plan / ask can surface events
+	// and block on the per-session resume channels.
+	r := &agent.Runner{Client: cli, Store: rf.db}
+	r.Deps = agent.ToolDeps{Factory: rf.factory, Engine: rf.engine, Store: rf.db}
+	r.Tools = agent.RegisterK8sTools(&r.Deps)
+	return r
 }
 
 // pickDefaultClient returns the LLM client the agent loop should
