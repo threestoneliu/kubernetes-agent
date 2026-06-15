@@ -2,16 +2,25 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/threestoneliu/kubernetes-agent/internal/agent"
 	"github.com/threestoneliu/kubernetes-agent/internal/config"
 	"github.com/threestoneliu/kubernetes-agent/internal/crypto"
+	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/logging"
+	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/server"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
+	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
 
 func main() {
@@ -37,17 +46,64 @@ func run() error {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	_ = aead // unused until Task 5 wires clusters through crypto
 
-	slog.Info("startup complete",
-		"host", cfg.Server.Host,
-		"port", cfg.Server.Port,
-		"db", cfg.Storage.DBPath,
-	)
+	deps := buildDeps(db, aead)
+	router := server.NewRouter(deps)
 
-	<-ctx.Done()
+	addr := net.JoinHostPort(cfg.Server.Host, fmt.Sprintf("%d", cfg.Server.Port))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	serverErr := make(chan error, 1)
+	go func() {
+		slog.Info("http listening", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+		close(serverErr)
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			return fmt.Errorf("http listen: %w", err)
+		}
+	case <-ctx.Done():
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelShutdown()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Error("http shutdown", "err", err)
+		}
+	}
+
 	slog.Info("shutdown")
 	return nil
+}
+
+// buildDeps assembles the dependency bag the HTTP layer needs. The
+// chat route's RunnerFactory is nil in this minimal wiring — the
+// chat handler returns a 400 on validation before touching the
+// factory, and the SSE stream emits an internal error if it ever
+// gets that far. Task 13 (full LLM + agent wiring) replaces this
+// stub with a real factory.
+func buildDeps(db *store.DB, aead *crypto.AEAD) server.Deps {
+	registry := &llm.Registry{
+		Providers: []llm.Provider{},
+		Clients:   map[string]llm.Client{},
+		Health:    map[string]llm.PingStatus{},
+	}
+	factory := k8s.NewClientFactory(db, aead)
+	return server.Deps{
+		DB:      db,
+		AEAD:    aead,
+		Engine:  &policy.Engine{Rules: policy.DefaultRules()},
+		LLM:     registry,
+		Factory: factory,
+		Sessions: agent.NewSessionManager(),
+	}
 }
 
 // startup runs the master-key + DB + migrate + seed sequence and returns the
