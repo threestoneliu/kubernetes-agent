@@ -176,17 +176,17 @@ type stubFactory struct {
 // GVRs with empty Version, so we translate here before delegating
 // to the fake client (which needs the explicit Version).
 var wellKnownGV = map[string]schema.GroupVersion{
-	"pods":              {"", "v1"},
-	"events":            {"", "v1"},
-	"deployments":       {"apps", "v1"},
-	"nodes":             {"", "v1"},
-	"namespaces":        {"", "v1"},
-	"services":          {"", "v1"},
-	"configmaps":        {"", "v1"},
-	"secrets":           {"", "v1"},
-	"replicasets":       {"apps", "v1"},
-	"statefulsets":      {"apps", "v1"},
-	"daemonsets":        {"apps", "v1"},
+	"pods":         {Group: "", Version: "v1"},
+	"events":       {Group: "", Version: "v1"},
+	"deployments":  {Group: "apps", Version: "v1"},
+	"nodes":        {Group: "", Version: "v1"},
+	"namespaces":   {Group: "", Version: "v1"},
+	"services":     {Group: "", Version: "v1"},
+	"configmaps":   {Group: "", Version: "v1"},
+	"secrets":      {Group: "", Version: "v1"},
+	"replicasets":  {Group: "apps", Version: "v1"},
+	"statefulsets": {Group: "apps", Version: "v1"},
+	"daemonsets":   {Group: "apps", Version: "v1"},
 }
 
 func (f *stubFactory) Get(ctx context.Context, clusterID string) (dynamic.Interface, error) {
