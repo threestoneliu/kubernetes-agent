@@ -36,3 +36,8 @@ go.work.sum
 
 # Per-user Claude Code settings (project-level .claude/ commands and skills stay tracked)
 .claude/settings.local.json
+
+# Node / pnpm
+web/node_modules/
+web/dist/
+web/.vite/
