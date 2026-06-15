@@ -92,21 +92,21 @@
 
 ## 10. Web UI 脚手架
 
-- [ ] 10.1 `web/package.json` 初始化:Vite + React + TypeScript + Tailwind(可选)
-- [ ] 10.2 `web/vite.config.ts`:开发期代理 `/api` 到 `:8080`,支持 `KUBERNETES_AGENT_DEV=1` 后端代理前端 dev server
-- [ ] 10.3 创建 `web/src/sse.ts`:基于原生 `EventSource` 的客户端,支持 last_event_id 重连
-- [ ] 10.4 创建状态管理:5 个 UI 状态机(对话 / Plan 阻塞 / ask_user / 错误 toast / 工具执行)
-- [ ] 10.5 风险等级 emoji + 颜色组件 + 折叠组件(reasoning / 工具行)
+- [x] 10.1 `web/package.json` 初始化:Vite + React + TypeScript + Tailwind(可选)
+- [x] 10.2 `web/vite.config.ts`:开发期代理 `/api` 到 `:8080`,支持 `KUBERNETES_AGENT_DEV=1` 后端代理前端 dev server
+- [x] 10.3 创建 `web/src/sse.ts`:基于原生 `EventSource` 的客户端,支持 last_event_id 重连
+- [x] 10.4 创建状态管理:5 个 UI 状态机(对话 / Plan 阻塞 / ask_user / 错误 toast / 工具执行)
+- [x] 10.5 风险等级 emoji + 颜色组件 + 折叠组件(reasoning / 工具行)
 
 ## 11. Web UI 视图
 
-- [ ] 11.1 实现 `views/ChatView.tsx`:主对话视图布局(侧边栏 + cluster/session 切换 + 消息流 + 输入框)
-- [ ] 11.2 实现 `views/ClusterView.tsx`:上传 / 列出 / 删除 kubeconfig,显示 server + user
-- [ ] 11.3 实现 `views/PolicyView.tsx`:YAML 文本编辑 + 启用/禁用 checkbox + 校验提示
-- [ ] 11.4 实现 Plan 预览模态:展示 diffs + 风险等级 + 确认/取消按钮,生成 confirm_token
-- [ ] 11.5 实现 ask_user 表单:单选 / 多选 / 文本三种模式
-- [ ] 11.6 实现错误 toast + 顶部重连状态条
-- [ ] 11.7 视觉:侧边栏 / 风险 emoji / 折叠块全部按 design 文档 D10 落实
+- [x] 11.1 实现 `views/ChatView.tsx`:主对话视图布局(侧边栏 + cluster/session 切换 + 消息流 + 输入框)
+- [x] 11.2 实现 `views/ClusterView.tsx`:上传 / 列出 / 删除 kubeconfig,显示 server + user
+- [x] 11.3 实现 `views/PolicyView.tsx`:YAML 文本编辑 + 启用/禁用 checkbox + 校验提示
+- [x] 11.4 实现 Plan 预览模态:展示 diffs + 风险等级 + 确认/取消按钮,生成 confirm_token
+- [x] 11.5 实现 ask_user 表单:单选 / 多选 / 文本三种模式
+- [x] 11.6 实现错误 toast + 顶部重连状态条
+- [x] 11.7 视觉:侧边栏 / 风险 emoji / 折叠块全部按 design 文档 D10 落实
 
 ## 12. 嵌入与单二进制
 
