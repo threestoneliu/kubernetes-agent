@@ -176,3 +176,10 @@ Each spec's `#### Scenario:` blocks were traced to tests:
 1. **✅ Done**: Revise the 3 stale spec points to match reality (SSE client transport, `Last-Event-ID` advisory, `KUBERNETES_AGENT_DEV` no-op). See WARNING-1/2/3 sections above.
 2. **Archive**: Run `openspec archive k8s-natural-language-agent -y`.
 3. **Post-archive follow-up changes** (per `docs/roadmap.md`): multi-step transactions + diagnosis, Helm, multi-user, multi-cluster, UI polish.
+
+## Overall Decision
+
+- [x] ✅ **PASS** — no critical issues, no warnings (all 3 resolved via spec revision). Ready for archive.
+- [ ] ⚠️ PASS WITH WARNINGS
+- [ ] ❌ FAIL
+
