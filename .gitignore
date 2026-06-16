@@ -36,3 +36,18 @@ go.work.sum
 
 # Per-user Claude Code settings (project-level .claude/ commands and skills stay tracked)
 .claude/settings.local.json
+
+# Node / pnpm
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Go-built single binary (make build)
+kubernetes-agent
+/server
+
+# Embedded SPA staging dir; populated by `make copy-web` before
+# `go build`. //go:embed cannot reach web/dist/ from
+# internal/server/, so the build copies the SPA next to the
+# embedding .go file. This dir is a build artifact, not source.
+internal/server/web_dist/

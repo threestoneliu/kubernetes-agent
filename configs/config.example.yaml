@@ -1,0 +1,26 @@
+server:
+  host: 127.0.0.1
+  port: 8080
+
+storage:
+  db_path: ~/.kubernetes-agent/data.db
+
+llm:
+  default: anthropic-prod
+  providers:
+    - name: anthropic-prod
+      type: anthropic
+      apiKey: ${ANTHROPIC_API_KEY}
+      model: claude-sonnet-4-6
+    - name: openai-fallback
+      type: openai
+      apiKey: ${OPENAI_API_KEY}
+      model: gpt-4o
+    - name: ollama-local
+      type: openai-compatible
+      baseURL: http://localhost:11434/v1
+      model: llama3.1
+
+logging:
+  level: info
+  format: json

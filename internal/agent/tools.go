@@ -1,0 +1,357 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/threestoneliu/kubernetes-agent/internal/llm"
+	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/store"
+	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
+)
+
+// ToolDeps bundles everything a k8s tool handler needs: the dynamic
+// client factory, policy engine, store (for plan persistence), the
+// per-session state (for blocking on plan confirm / ask), and the
+// emitter (for pushing plan / ask events to the SSE channel).
+//
+// One ToolDeps instance is shared across the six handlers. The Runner
+// constructs it once when it starts a turn and passes it down.
+type ToolDeps struct {
+	Factory k8s.ClientFactory
+	Engine  *policy.Engine
+	Store   *store.DB
+	Session *Session
+	// Emit is called by handlers that need to surface side-channel
+	// events before returning their tool output. In particular,
+	// plan_write emits PlanReady + PlanAwaitingConfirm via Emit
+	// before blocking on the session's ResumePlan.
+	Emit func(Event)
+}
+
+// RegisterK8sTools returns the six llm.Tool entries the agent loop
+// hands to the LLM: k8s_get, k8s_list, k8s_describe, k8s_plan_write,
+// k8s_execute_plan, k8s_ask_user.
+//
+// d is taken by pointer so the returned tool handlers observe the
+// same ToolDeps the agent loop mutates — Run wires d.Emit and
+// d.Session lazily on the first Chat call, and the plan / ask
+// handlers need those mutations to surface events and block on
+// the per-session resume channels.
+//
+// Each handler's input is JSON of the tool's typed input struct (e.g.
+// k8s.GetInput). The agent loop deserialises the model's tool call
+// input and hands it to the handler. Handlers return JSON of the
+// corresponding output struct.
+func RegisterK8sTools(d *ToolDeps) []llm.Tool {
+	return []llm.Tool{
+		{
+			Name:        "k8s_get",
+			Description: "Fetch a single Kubernetes resource by name. Returns the resource as a JSON object.",
+			InputSchema: getSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.GetInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				out, err := k8s.Get(ctx, d.Factory, in)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(out)
+			},
+		},
+		{
+			Name:        "k8s_list",
+			Description: "List Kubernetes resources, optionally filtered by namespace and label selector. Empty namespace means all namespaces.",
+			InputSchema: listSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.ListInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				out, err := k8s.List(ctx, d.Factory, in)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(out)
+			},
+		},
+		{
+			Name:        "k8s_describe",
+			Description: "Describe a Kubernetes resource: returns the object, related events, owner references, and diagnosis hints derived from conditions / container state.",
+			InputSchema: describeSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.DescribeInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				out, err := k8s.Describe(ctx, d.Factory, in)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(out)
+			},
+		},
+		{
+			Name:        "k8s_plan_write",
+			Description: "Build a plan for one or more write operations (apply/delete/scale). Returns a plan_id and diffs. The agent must then call k8s_execute_plan with the plan_id after the user confirms.",
+			InputSchema: planWriteSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.PlanInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				out, err := k8s.PlanWrite(ctx, d.Factory, d.Engine, in)
+				if err != nil {
+					return nil, err
+				}
+				// Persist the plan so execute_plan can retrieve the
+				// original ops at execute time.
+				if d.Store != nil && d.Session != nil {
+					opsJSON, _ := json.Marshal(in.Operations)
+					diffsJSON, _ := json.Marshal(out.Diffs)
+					deniedJSON, _ := json.Marshal(out.Denied)
+					risk := "low"
+					if len(out.Diffs) > 0 {
+						risk = out.Diffs[0].Risk
+					}
+					_ = d.Store.CreatePlan(ctx, store.Plan{
+						ID:        out.PlanID,
+						SessionID: d.Session.ID,
+						OpsJSON:   string(opsJSON),
+						DiffsJSON: mergeDiffsAndDenied(diffsJSON, deniedJSON),
+						Risk:      risk,
+						Status:    store.PlanStatusPending,
+					})
+				}
+				// Surface the plan to the frontend so it can render
+				// the diffs in a modal, then block on user decision.
+				if d.Emit != nil {
+					ev, _ := NewEvent(EventPlanReady, PlanReady{
+						PlanID:  out.PlanID,
+						Summary: out.Summary,
+						Diffs:   out.Diffs,
+						Denied:  out.Denied,
+					})
+					d.Emit(ev)
+					ev, _ = NewEvent(EventPlanAwaitingConfirm, PlanAwaitingConfirm{PlanID: out.PlanID})
+					d.Emit(ev)
+				}
+				if d.Session != nil {
+					if err := d.Session.WaitPlan(ctx); err != nil {
+						return nil, fmt.Errorf("plan %s: %w", out.PlanID, err)
+					}
+				}
+				return json.Marshal(map[string]any{
+					"plan_id": out.PlanID,
+					"decision": d.planDecision(),
+				})
+			},
+		},
+		{
+			Name:        "k8s_execute_plan",
+			Description: "Execute a previously planned set of operations. Requires the plan_id returned by k8s_plan_write and a confirm_token. Operations are re-evaluated against policy at execute time.",
+			InputSchema: executePlanSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.ExecuteInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				ops, err := loadOpsForPlan(ctx, d.Store, in.PlanID)
+				if err != nil {
+					return nil, err
+				}
+				out, err := k8s.ExecutePlan(ctx, d.Factory, d.Engine, d.Store, in, ops)
+				if err != nil {
+					return nil, err
+				}
+				if d.Store != nil {
+					_ = d.Store.MarkExecuted(ctx, in.PlanID)
+				}
+				return json.Marshal(out)
+			},
+		},
+		{
+			Name:        "k8s_ask_user",
+			Description: "Ask the user a clarifying question. The frontend renders an input form. The next turn the user provides an answer; until then the agent loop blocks.",
+			InputSchema: askUserSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in k8s.AskUserInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if d.Emit != nil {
+					ev, _ := NewEvent(EventAskUser, AskUserPayload{
+						Question:    in.Question,
+						Options:     in.Options,
+						MultiSelect: in.MultiSelect,
+					})
+					d.Emit(ev)
+				}
+				if d.Session != nil {
+					if err := d.Session.WaitAsk(ctx); err != nil {
+						return nil, fmt.Errorf("ask_user: %w", err)
+					}
+					return json.Marshal(map[string]any{
+						"question_id": hashString(in.Question),
+						"answer":      d.Session.AskAnswer,
+					})
+				}
+				out := k8s.AskUser(in)
+				return json.Marshal(out)
+			},
+		},
+	}
+}
+
+// planDecision reports the user's plan decision ("confirmed" /
+// "cancelled") for the most recent plan. Used to feed back to the
+// LLM in the tool result.
+func (d *ToolDeps) planDecision() string {
+	if d.Session == nil {
+		return "confirmed"
+	}
+	d.Session.mu.Lock()
+	defer d.Session.mu.Unlock()
+	if d.Session.PlanResult == "" {
+		return "confirmed"
+	}
+	return d.Session.PlanResult
+}
+
+// mergeDiffsAndDenied stores the diffs and denied lists in the
+// plans.DiffsJSON column as a JSON object {"diffs": ..., "denied": ...}
+// so execute_plan can read them later (we keep diffs for audit).
+func mergeDiffsAndDenied(diffsJSON, deniedJSON []byte) string {
+	var diffs, denied json.RawMessage
+	_ = json.Unmarshal(diffsJSON, &diffs)
+	_ = json.Unmarshal(deniedJSON, &denied)
+	out, _ := json.Marshal(map[string]json.RawMessage{
+		"diffs":  diffs,
+		"denied": denied,
+	})
+	return string(out)
+}
+
+// loadOpsForPlan reads a plan's persisted operations back from the
+// store. The plan_write handler wrote them as JSON; execute_plan
+// needs the typed []Operation to re-evaluate against policy.
+func loadOpsForPlan(ctx context.Context, st *store.DB, planID string) ([]k8s.Operation, error) {
+	if st == nil {
+		return nil, fmt.Errorf("store not configured")
+	}
+	plan, err := st.GetPlan(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	var ops []k8s.Operation
+	if err := json.Unmarshal([]byte(plan.OpsJSON), &ops); err != nil {
+		return nil, fmt.Errorf("decode plan ops: %w", err)
+	}
+	return ops, nil
+}
+
+// hashString is a small stable hash for ask_user question IDs. It
+// mirrors k8s.hashQ but is duplicated here to avoid the dependency
+// (the agent package does not own the tool layer's helpers).
+func hashString(s string) string {
+	h := uint32(0)
+	for _, c := range s {
+		h = h*31 + uint32(c)
+	}
+	return fmt.Sprintf("%x", h)
+}
+
+// --- JSON schemas for each tool's input. Hand-written and minimal —
+// JSON Schema 2020-12 with the subset our LLM providers understand.
+// `required` lists the keys we treat as mandatory; properties that
+// are optional use omitempty in the typed input struct and are not
+// marked required here.
+
+var getSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"resource":  map[string]any{"type": "string", "description": "lowercase plural resource name (e.g. pods, deployments)"},
+		"name":      map[string]any{"type": "string", "description": "resource name"},
+		"namespace": map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
+		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID)"},
+	},
+	"required": []string{"resource", "name", "cluster_id"},
+}
+
+var listSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"resource":       map[string]any{"type": "string", "description": "lowercase plural resource name"},
+		"namespace":      map[string]any{"type": "string", "description": "namespace (empty = all)"},
+		"label_selector": map[string]any{"type": "string", "description": "label selector (e.g. app=nginx)"},
+		"cluster_id":     map[string]any{"type": "string", "description": "cluster id (UUID)"},
+	},
+	"required": []string{"resource", "cluster_id"},
+}
+
+var describeSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"resource":   map[string]any{"type": "string", "description": "lowercase plural resource name"},
+		"name":       map[string]any{"type": "string", "description": "resource name"},
+		"namespace":  map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
+		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID)"},
+	},
+	"required": []string{"resource", "name", "cluster_id"},
+}
+
+var planWriteSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"operations": map[string]any{
+			"type":        "array",
+			"description": "List of write operations to plan. Each op has action (apply|delete|scale), resource, name, namespace, and for apply the manifest.",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"action":    map[string]any{"type": "string", "enum": []string{"apply", "delete", "scale"}},
+					"resource":  map[string]any{"type": "string"},
+					"name":      map[string]any{"type": "string"},
+					"namespace": map[string]any{"type": "string"},
+					"kind":      map[string]any{"type": "string"},
+					"replicas":  map[string]any{"type": "integer"},
+					"manifest":  map[string]any{"type": "object", "additionalProperties": true},
+					"cluster_id": map[string]any{"type": "string"},
+				},
+				"required": []string{"action", "resource", "name", "namespace", "cluster_id"},
+			},
+		},
+	},
+	"required": []string{"operations"},
+}
+
+var executePlanSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"plan_id":       map[string]any{"type": "string", "description": "plan_id returned by k8s_plan_write"},
+		"confirm_token": map[string]any{"type": "string", "description": "opaque token that the user must approve"},
+	},
+	"required": []string{"plan_id", "confirm_token"},
+}
+
+var askUserSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"question":     map[string]any{"type": "string", "description": "question to ask the user"},
+		"options":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"multi_select": map[string]any{"type": "boolean"},
+	},
+	"required": []string{"question"},
+}
+
+// AllToolNames returns the canonical list of tool names registered by
+// RegisterK8sTools. Used by tests.
+func AllToolNames() []string {
+	return []string{
+		"k8s_get", "k8s_list", "k8s_describe",
+		"k8s_plan_write", "k8s_execute_plan", "k8s_ask_user",
+	}
+}
