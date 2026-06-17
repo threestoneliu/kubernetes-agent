@@ -102,6 +102,7 @@ func (emptyFactory) Get(ctx context.Context, id string) (dynamic.Interface, erro
 	return nil, nil
 }
 func (emptyFactory) Invalidate(id string) {}
+func (emptyFactory) Resolver(id string) *k8s.Resolver { return k8s.NewResolver(nil) }
 
 func TestK8sGetHandler_InvalidJSON(t *testing.T) {
 	tools := RegisterK8sTools(&ToolDeps{Factory: emptyFactory{}})

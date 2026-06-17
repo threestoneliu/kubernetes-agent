@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type GetInput struct {
@@ -25,7 +24,7 @@ func Get(ctx context.Context, f ClientFactory, in GetInput) (*GetOutput, error) 
 	if in.Namespace == "" {
 		in.Namespace = "default"
 	}
-	gvr := schema.GroupVersionResource{Resource: in.Resource}
+	gvr := f.Resolver(in.ClusterID).Resolve(in.Resource)
 	dc, err := f.Get(ctx, in.ClusterID)
 	if err != nil {
 		return nil, err

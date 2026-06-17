@@ -207,6 +207,31 @@ func (f *fakeK8sFactory) Invalidate(clusterID string) {
 	delete(f.clients, clusterID)
 }
 
+// Resolver returns a Resolver pre-populated with the e2e test's
+// built-in GV map. dynfake does not implement the discovery API,
+// so we hand the resolver a static cache rather than a discovery
+// client.
+func (f *fakeK8sFactory) Resolver(clusterID string) *k8s.Resolver {
+	return k8s.ResolverFromMap(e2eGVCache())
+}
+
+// e2eGVCache maps the lowercase plural resources the e2e tests
+// touch to their canonical Group/Version, mirroring the map that
+// the production Resolver would build from the cluster's discovery
+// payload.
+func e2eGVCache() map[string]schema.GroupVersionResource {
+	m := map[string]schema.GroupVersionResource{}
+	for res, gv := range e2eKnownGV {
+		m[res] = schema.GroupVersionResource{Group: gv.Group, Version: gv.Version, Resource: res}
+	}
+	return m
+}
+
+var e2eKnownGV = map[string]schema.GroupVersion{
+	"pods":        {Group: "", Version: "v1"},
+	"deployments": {Group: "apps", Version: "v1"},
+}
+
 func (f *fakeK8sFactory) client(clusterID string) *dynfake.FakeDynamicClient {
 	f.mu.Lock()
 	defer f.mu.Unlock()

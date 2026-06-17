@@ -10,7 +10,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
@@ -59,7 +58,8 @@ func PlanWrite(ctx context.Context, f ClientFactory, eng *policy.Engine, in Plan
 		if err != nil {
 			return nil, fmt.Errorf("get client for %s: %w", op.clusterID, err)
 		}
-		diff, err := dryRun(ctx, dc, op)
+		resolver := f.Resolver(op.clusterID)
+		diff, err := dryRun(ctx, dc, resolver, op)
 		if err != nil {
 			return nil, fmt.Errorf("dry-run %s %s/%s: %w", op.action, op.namespace, op.name, err)
 		}
@@ -70,8 +70,8 @@ func PlanWrite(ctx context.Context, f ClientFactory, eng *policy.Engine, in Plan
 	return out, nil
 }
 
-func dryRun(ctx context.Context, dc dynamic.Interface, op Operation) (*Diff, error) {
-	gvr := resolveGVR(schema.GroupVersionResource{Resource: op.resource})
+func dryRun(ctx context.Context, dc dynamic.Interface, resolver *Resolver, op Operation) (*Diff, error) {
+	gvr := resolver.Resolve(op.resource)
 	res := dc.Resource(gvr).Namespace(op.namespace)
 	switch op.action {
 	case "apply":

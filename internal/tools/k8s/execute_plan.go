@@ -6,7 +6,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
@@ -79,7 +78,7 @@ func applyOne(ctx context.Context, f ClientFactory, op Operation) error {
 	if err != nil {
 		return err
 	}
-	gvr := resolveGVR(schema.GroupVersionResource{Resource: op.resource})
+	gvr := f.Resolver(op.clusterID).Resolve(op.resource)
 	res := dc.Resource(gvr).Namespace(op.namespace)
 	switch op.action {
 	case "apply":

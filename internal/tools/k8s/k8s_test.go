@@ -192,7 +192,21 @@ var wellKnownGV = map[string]schema.GroupVersion{
 func (f *stubFactory) Get(ctx context.Context, clusterID string) (dynamic.Interface, error) {
 	return &shimClient{inner: f.dc}, nil
 }
+func (f *stubFactory) Resolver(clusterID string) *Resolver {
+	return &Resolver{cache: wellKnownGVCache(), loaded: true}
+}
 func (f *stubFactory) Invalidate(clusterID string) {}
+
+// wellKnownGVCache builds a Resolver pre-populated from the test's
+// static wellKnownGV map so dryRun tests don't depend on the real
+// discovery API (dynfake doesn't speak it).
+func wellKnownGVCache() map[string]schema.GroupVersionResource {
+	out := map[string]schema.GroupVersionResource{}
+	for res, gv := range wellKnownGV {
+		out[res] = schema.GroupVersionResource{Group: gv.Group, Version: gv.Version, Resource: res}
+	}
+	return out
+}
 
 type shimClient struct {
 	inner *dynfake.FakeDynamicClient
@@ -333,7 +347,7 @@ func TestPlanWrite_ApplyRequiresManifest(t *testing.T) {
 
 func TestDryRun_Delete(t *testing.T) {
 	f, _ := newSeededFactory(t)
-	diff, err := dryRun(context.Background(), &shimClient{inner: f.dc}, Operation{
+	diff, err := dryRun(context.Background(), f.dc, f.Resolver("c1"), Operation{
 		action:    "delete",
 		resource:  "pods",
 		name:      "pod-a",
@@ -353,7 +367,7 @@ func TestDryRun_Apply(t *testing.T) {
 		"metadata": map[string]any{"name": "pod-a", "namespace": "default"},
 		"spec":     map[string]any{"containers": []any{map[string]any{"name": "c", "image": "nginx"}}},
 	}
-	diff, err := dryRun(context.Background(), &shimClient{inner: f.dc}, Operation{
+	diff, err := dryRun(context.Background(), f.dc, f.Resolver("c1"), Operation{
 		action:    "apply",
 		resource:  "pods",
 		name:      "pod-a",
@@ -367,7 +381,7 @@ func TestDryRun_Apply(t *testing.T) {
 
 func TestDryRun_UnknownAction(t *testing.T) {
 	f, _ := newSeededFactory(t)
-	_, err := dryRun(context.Background(), &shimClient{inner: f.dc}, Operation{
+	_, err := dryRun(context.Background(), f.dc, f.Resolver("c1"), Operation{
 		action:    "weird",
 		resource:  "pods",
 		name:      "pod-a",
@@ -542,7 +556,7 @@ func TestDiagnoseStatus_NotConditionType(t *testing.T) {
 func TestDryRun_Scale(t *testing.T) {
 	f, dc := newSeededFactory(t)
 	seedDeployment(t, dc, "web", "default", 3)
-	diff, err := dryRun(context.Background(), &shimClient{inner: f.dc}, Operation{
+	diff, err := dryRun(context.Background(), f.dc, f.Resolver("c1"), Operation{
 		action:    "scale",
 		resource:  "deployments",
 		name:      "web",
@@ -577,6 +591,7 @@ func (e *errorFactory) Get(ctx context.Context, clusterID string) (dynamic.Inter
 	return nil, e.err
 }
 func (e *errorFactory) Invalidate(clusterID string) {}
+func (e *errorFactory) Resolver(clusterID string) *Resolver { return NewResolver(nil) }
 
 func TestApplyOne_Apply(t *testing.T) {
 	f, _ := newSeededFactory(t)

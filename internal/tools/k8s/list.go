@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 )
 
@@ -23,7 +22,7 @@ type ListOutput struct {
 // List enumerates resources matching the (optional) namespace and
 // label selector. Empty namespace means "all namespaces".
 func List(ctx context.Context, f ClientFactory, in ListInput) (*ListOutput, error) {
-	gvr := resolveGVR(schema.GroupVersionResource{Resource: in.Resource})
+	gvr := f.Resolver(in.ClusterID).Resolve(in.Resource)
 	dc, err := f.Get(ctx, in.ClusterID)
 	if err != nil {
 		return nil, err
