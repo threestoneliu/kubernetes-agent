@@ -30,7 +30,7 @@ func Describe(ctx context.Context, f ClientFactory, in DescribeInput) (*Describe
 	if in.Namespace == "" {
 		in.Namespace = "default"
 	}
-	gvr := schema.GroupVersionResource{Resource: in.Resource}
+	gvr := resolveGVR(schema.GroupVersionResource{Resource: in.Resource})
 	dc, err := f.Get(ctx, in.ClusterID)
 	if err != nil {
 		return nil, err

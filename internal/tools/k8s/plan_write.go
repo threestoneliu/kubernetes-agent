@@ -3,9 +3,11 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -69,7 +71,7 @@ func PlanWrite(ctx context.Context, f ClientFactory, eng *policy.Engine, in Plan
 }
 
 func dryRun(ctx context.Context, dc dynamic.Interface, op Operation) (*Diff, error) {
-	gvr := schema.GroupVersionResource{Resource: op.resource}
+	gvr := resolveGVR(schema.GroupVersionResource{Resource: op.resource})
 	res := dc.Resource(gvr).Namespace(op.namespace)
 	switch op.action {
 	case "apply":
@@ -77,11 +79,28 @@ func dryRun(ctx context.Context, dc dynamic.Interface, op Operation) (*Diff, err
 			return nil, fmt.Errorf("apply requires manifest")
 		}
 		u := &unstructured.Unstructured{Object: *op.manifest}
-		got, err := res.Patch(ctx, u.GetName(), "application/merge-patch+json", mustJSON(*op.manifest), metav1.PatchOptions{DryRun: []string{metav1.DryRunAll}})
+		dryOpts := metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}}
+		// GET first to decide create-vs-update. Using server-side
+		// apply requires a real apiserver (dynfake doesn't honour
+		// its Conflict semantics), so branch explicitly.
+		_, gerr := res.Get(ctx, u.GetName(), metav1.GetOptions{})
+		if gerr != nil && !isNotFound(gerr) {
+			return nil, gerr
+		}
+		if isNotFound(gerr) {
+			created, err := res.Create(ctx, u, dryOpts)
+			if err != nil {
+				return nil, err
+			}
+			return &Diff{Action: op.action, Resource: op.resource, Name: u.GetName(), Namespace: op.namespace, After: created.UnstructuredContent()}, nil
+		}
+		// Resource exists — dry-run a merge-patch to capture the
+		// post-update state without mutating anything.
+		patched, err := res.Patch(ctx, u.GetName(), "application/merge-patch+json", mustJSON(*op.manifest), metav1.PatchOptions{DryRun: []string{metav1.DryRunAll}})
 		if err != nil {
 			return nil, err
 		}
-		return &Diff{Action: op.action, Resource: op.resource, Name: u.GetName(), Namespace: op.namespace, After: got.UnstructuredContent()}, nil
+		return &Diff{Action: op.action, Resource: op.resource, Name: u.GetName(), Namespace: op.namespace, After: patched.UnstructuredContent()}, nil
 	case "delete":
 		cur, err := res.Get(ctx, op.name, metav1.GetOptions{})
 		if err != nil {
@@ -97,6 +116,20 @@ func dryRun(ctx context.Context, dc dynamic.Interface, op Operation) (*Diff, err
 	default:
 		return nil, fmt.Errorf("unknown action %q", op.action)
 	}
+}
+
+// isNotFound reports whether err is a Kubernetes API NotFound
+// (HTTP 404). Used by dryRun's apply branch to fall back from
+// server-side apply to Create when the resource does not exist yet.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var s *apierrors.StatusError
+	if errors.As(err, &s) {
+		return s.ErrStatus.Reason == metav1.StatusReasonNotFound
+	}
+	return false
 }
 
 func mustJSON(v any) []byte {

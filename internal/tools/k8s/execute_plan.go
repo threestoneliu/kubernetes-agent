@@ -79,7 +79,7 @@ func applyOne(ctx context.Context, f ClientFactory, op Operation) error {
 	if err != nil {
 		return err
 	}
-	gvr := schema.GroupVersionResource{Resource: op.resource}
+	gvr := resolveGVR(schema.GroupVersionResource{Resource: op.resource})
 	res := dc.Resource(gvr).Namespace(op.namespace)
 	switch op.action {
 	case "apply":
