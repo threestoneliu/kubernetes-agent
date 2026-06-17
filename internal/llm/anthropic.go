@@ -204,9 +204,18 @@ func (s *fantasyStream) Close() error {
 func toFantasyTools(tools []Tool) []fantasy.Tool {
 	out := make([]fantasy.Tool, 0, len(tools))
 	for _, t := range tools {
+		// Extract the actual `properties` and `required` from the
+		// tool's JSON-schema-shaped InputSchema. Previously the
+		// whole InputSchema map was assigned to the top-level
+		// `properties` key, which produced a nested schema the LLM
+		// could not parse — every tool call arrived with `{}`.
+		props, _ := t.InputSchema["properties"].(map[string]any)
+		if props == nil {
+			props = map[string]any{}
+		}
 		schema := map[string]any{
 			"type":       "object",
-			"properties": t.InputSchema,
+			"properties": props,
 		}
 		if required, ok := t.InputSchema["required"]; ok {
 			schema["required"] = required

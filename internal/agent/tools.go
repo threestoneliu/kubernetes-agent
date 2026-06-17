@@ -55,6 +55,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.Get(ctx, d.Factory, in)
 				if err != nil {
 					return nil, err
@@ -71,6 +72,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.List(ctx, d.Factory, in)
 				if err != nil {
 					return nil, err
@@ -87,6 +89,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.Describe(ctx, d.Factory, in)
 				if err != nil {
 					return nil, err
@@ -102,6 +105,31 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				var in k8s.PlanInput
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				// Auto-fill cluster_id per operation from the
+				// session's bound cluster when the LLM omitted it.
+				// k8s.Operation keeps clusterID unexported, so we
+				// round-trip through JSON using its wire format.
+				if d.Session != nil && d.Session.ClusterID != "" {
+					bound := d.Session.ClusterID
+					for i := range in.Operations {
+						raw, err := json.Marshal(in.Operations[i])
+						if err != nil {
+							continue
+						}
+						var m map[string]any
+						if err := json.Unmarshal(raw, &m); err != nil {
+							continue
+						}
+						if cid, _ := m["cluster_id"].(string); cid == "" {
+							m["cluster_id"] = bound
+							fixed, err := json.Marshal(m)
+							if err != nil {
+								continue
+							}
+							_ = json.Unmarshal(fixed, &in.Operations[i])
+						}
+					}
 				}
 				out, err := k8s.PlanWrite(ctx, d.Factory, d.Engine, in)
 				if err != nil {
@@ -145,7 +173,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 					}
 				}
 				return json.Marshal(map[string]any{
-					"plan_id": out.PlanID,
+					"plan_id":  out.PlanID,
 					"decision": d.planDecision(),
 				})
 			},
@@ -162,6 +190,31 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				ops, err := loadOpsForPlan(ctx, d.Store, in.PlanID)
 				if err != nil {
 					return nil, err
+				}
+				// Apply session-bound cluster_id to operations that
+				// were planned before the user switched clusters.
+				// Same JSON round-trip as in k8s_plan_write because
+				// k8s.Operation.clusterID is unexported.
+				if d.Session != nil && d.Session.ClusterID != "" {
+					bound := d.Session.ClusterID
+					for i := range ops {
+						raw, err := json.Marshal(ops[i])
+						if err != nil {
+							continue
+						}
+						var m map[string]any
+						if err := json.Unmarshal(raw, &m); err != nil {
+							continue
+						}
+						if cid, _ := m["cluster_id"].(string); cid == "" {
+							m["cluster_id"] = bound
+							fixed, err := json.Marshal(m)
+							if err != nil {
+								continue
+							}
+							_ = json.Unmarshal(fixed, &ops[i])
+						}
+					}
 				}
 				out, err := k8s.ExecutePlan(ctx, d.Factory, d.Engine, d.Store, in, ops)
 				if err != nil {
@@ -203,6 +256,24 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				return json.Marshal(out)
 			},
 		},
+	}
+}
+
+// fillClusterID assigns the session-bound cluster_id to *cid when
+// the caller did not provide one. This lets the LLM omit cluster_id
+// from tool arguments without breaking the call: the agent loop
+// already knows which cluster the user is talking to via the
+// session. If the LLM did pass one (e.g. for an explicit cluster
+// switch), keep the LLM's value.
+func (d *ToolDeps) fillClusterID(cid *string) {
+	if *cid != "" || d.Session == nil {
+		return
+	}
+	d.Session.mu.Lock()
+	bound := d.Session.ClusterID
+	d.Session.mu.Unlock()
+	if bound != "" {
+		*cid = bound
 	}
 }
 
@@ -273,12 +344,12 @@ func hashString(s string) string {
 var getSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"resource":  map[string]any{"type": "string", "description": "lowercase plural resource name (e.g. pods, deployments)"},
-		"name":      map[string]any{"type": "string", "description": "resource name"},
-		"namespace": map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
-		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID)"},
+		"resource":   map[string]any{"type": "string", "description": "lowercase plural resource name (e.g. pods, deployments)"},
+		"name":       map[string]any{"type": "string", "description": "resource name"},
+		"namespace":  map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
+		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 	},
-	"required": []string{"resource", "name", "cluster_id"},
+	"required": []string{"resource", "name"},
 }
 
 var listSchema = map[string]any{
@@ -287,9 +358,9 @@ var listSchema = map[string]any{
 		"resource":       map[string]any{"type": "string", "description": "lowercase plural resource name"},
 		"namespace":      map[string]any{"type": "string", "description": "namespace (empty = all)"},
 		"label_selector": map[string]any{"type": "string", "description": "label selector (e.g. app=nginx)"},
-		"cluster_id":     map[string]any{"type": "string", "description": "cluster id (UUID)"},
+		"cluster_id":     map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 	},
-	"required": []string{"resource", "cluster_id"},
+	"required": []string{"resource"},
 }
 
 var describeSchema = map[string]any{
@@ -298,9 +369,9 @@ var describeSchema = map[string]any{
 		"resource":   map[string]any{"type": "string", "description": "lowercase plural resource name"},
 		"name":       map[string]any{"type": "string", "description": "resource name"},
 		"namespace":  map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
-		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID)"},
+		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 	},
-	"required": []string{"resource", "name", "cluster_id"},
+	"required": []string{"resource", "name"},
 }
 
 var planWriteSchema = map[string]any{
@@ -312,16 +383,16 @@ var planWriteSchema = map[string]any{
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"action":    map[string]any{"type": "string", "enum": []string{"apply", "delete", "scale"}},
-					"resource":  map[string]any{"type": "string"},
-					"name":      map[string]any{"type": "string"},
-					"namespace": map[string]any{"type": "string"},
-					"kind":      map[string]any{"type": "string"},
-					"replicas":  map[string]any{"type": "integer"},
-					"manifest":  map[string]any{"type": "object", "additionalProperties": true},
-					"cluster_id": map[string]any{"type": "string"},
+					"action":     map[string]any{"type": "string", "enum": []string{"apply", "delete", "scale"}},
+					"resource":   map[string]any{"type": "string"},
+					"name":       map[string]any{"type": "string"},
+					"namespace":  map[string]any{"type": "string"},
+					"kind":       map[string]any{"type": "string"},
+					"replicas":   map[string]any{"type": "integer"},
+					"manifest":   map[string]any{"type": "object", "additionalProperties": true},
+					"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 				},
-				"required": []string{"action", "resource", "name", "namespace", "cluster_id"},
+				"required": []string{"action", "resource", "name", "namespace"},
 			},
 		},
 	},

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/agent"
+	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 )
 
@@ -125,6 +126,13 @@ func chatHandler(d Deps) http.HandlerFunc {
 		runner.Session = agent.NewSession(resolvedID)
 		if req.ClusterID != "" {
 			runner.Session.ClusterID = req.ClusterID
+			// Surface the cluster UUID to the LLM via the system
+			// prompt so it can pass cluster_id back to the k8s
+			// tools. Without this the LLM guesses "default" or
+			// asks the user. Append-only — does not replace the
+			// default prompt.
+			runner.SystemPrompt = llm.SystemPrompt +
+				fmt.Sprintf("\n\n当前 session 绑定的 cluster_id: %s。所有 k8s_* 工具调用 MUST 使用此 UUID 作为 cluster_id 参数。", req.ClusterID)
 		}
 		// Register the live session so the /resume endpoint can
 		// unblock a pending plan confirm or ask_user response.
