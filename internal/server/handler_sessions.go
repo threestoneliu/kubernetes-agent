@@ -217,8 +217,7 @@ func deleteSessionHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		if d.Sessions != nil {
-			if s := d.Sessions.Get(id); s != nil {
-				_ = s // referenced only to gate the delete
+			if _, err := d.Sessions.Lookup(id); err == nil {
 				writeError(w, http.StatusConflict, "session_active",
 					"session is in progress; stop the turn first", false)
 				return
