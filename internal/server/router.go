@@ -70,8 +70,16 @@ func NewRouter(d Deps) http.Handler {
 	r.Route("/api/sessions", func(r chi.Router) {
 		r.Get("/", listSessionsHandler(d))
 		r.Post("/", createSessionHandler(d))
+		r.Delete("/", bulkDeleteSessionsHandler(d))
 		r.Get("/{id}", getSessionHandler(d))
+		r.Put("/{id}", putSessionHandler(d))
+		r.Delete("/{id}", deleteSessionHandler(d))
+		// /export and /messages are static suffixes and must be
+		// declared before any /{id} catch-all behaviour would
+		// shadow them; chi's router handles static-vs-param
+		// correctly inside the same Route block.
 		r.Get("/{id}/messages", listMessagesHandler(d))
+		r.Get("/{id}/export", exportSessionHandler(d))
 		r.Post("/{id}/resume", resumeHandler(d))
 	})
 
