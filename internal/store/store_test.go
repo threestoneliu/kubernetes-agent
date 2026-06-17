@@ -106,7 +106,7 @@ func TestSession_CreateGetListUpdateDelete(t *testing.T) {
 	require.Equal(t, "renamed", got.Title)
 	require.True(t, got.UpdatedAt.After(got.CreatedAt) || got.UpdatedAt.Equal(got.CreatedAt))
 
-	require.NoError(t, db.DeleteSession(ctx, "s1"))
+	_, err = db.DeleteSession(ctx, "s1"); require.NoError(t, err)
 	_, err = db.GetSession(ctx, "s1")
 	require.ErrorIs(t, err, ErrNotFound)
 }
@@ -137,7 +137,7 @@ func TestSession_DeleteCascadesMessagesAndPlans(t *testing.T) {
 		Status:    "pending",
 	}))
 
-	require.NoError(t, db.DeleteSession(ctx, "s1"))
+	_, err := db.DeleteSession(ctx, "s1"); require.NoError(t, err)
 
 	msgs, err := db.ListMessagesBySession(ctx, "s1")
 	require.NoError(t, err)
