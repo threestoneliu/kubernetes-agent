@@ -133,8 +133,26 @@ export async function setPolicyEnabled(id: string, enabled: boolean): Promise<vo
 
 // --- sessions ---
 
-export function listSessions(): Promise<{ sessions: Session[] }> {
-  return request('GET', '/api/sessions')
+export type SessionSort = 'updated_at' | 'created_at' | 'title'
+export type SessionOrder = 'asc' | 'desc'
+
+export interface ListSessionsOpts {
+  q?: string
+  sort?: SessionSort
+  order?: SessionOrder
+  limit?: number
+  offset?: number
+}
+
+export function listSessions(opts: ListSessionsOpts = {}): Promise<{ sessions: Session[] }> {
+  const params = new URLSearchParams()
+  if (opts.q) params.set('q', opts.q)
+  if (opts.sort) params.set('sort', opts.sort)
+  if (opts.order) params.set('order', opts.order)
+  if (opts.limit != null) params.set('limit', String(opts.limit))
+  if (opts.offset) params.set('offset', String(opts.offset))
+  const q = params.toString()
+  return request('GET', '/api/sessions' + (q ? '?' + q : ''))
 }
 
 export function createSession(input: { title: string; cluster_id?: string }): Promise<Session> {
@@ -143,6 +161,22 @@ export function createSession(input: { title: string; cluster_id?: string }): Pr
 
 export function getSession(id: string): Promise<Session> {
   return request('GET', `/api/sessions/${encodeURIComponent(id)}`)
+}
+
+export function renameSession(id: string, title: string): Promise<Session> {
+  return request('PUT', `/api/sessions/${encodeURIComponent(id)}`, { title })
+}
+
+export async function deleteSession(id: string): Promise<{ deleted: number }> {
+  return request('DELETE', `/api/sessions/${encodeURIComponent(id)}`)
+}
+
+export async function bulkDeleteSessions(): Promise<{ deleted: number }> {
+  return request('DELETE', '/api/sessions')
+}
+
+export function exportSessionUrl(id: string, format: 'md' | 'json'): string {
+  return `/api/sessions/${encodeURIComponent(id)}/export?format=${format}`
 }
 
 export function listMessages(id: string): Promise<{ messages: Message[] }> {

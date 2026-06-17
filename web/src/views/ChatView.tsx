@@ -1,11 +1,17 @@
 import React from 'react'
 import { openChatSse } from '../sse'
-import { ApiCallError, Cluster, listClusters, resumeSession } from '../api'
+import {
+  ApiCallError, Cluster, listClusters, resumeSession,
+  listSessions, createSession, renameSession, deleteSession,
+  bulkDeleteSessions, getSession, listMessages,
+  type Session, type SessionSort, type SessionOrder,
+} from '../api'
 import { useToast } from '../components/ToastProvider'
 import { idle, PendingPlan, Risk, UIState } from '../state'
 import { PlanModal } from '../components/PlanModal'
 import { AskUserForm } from '../components/AskUserForm'
 import { Markdown } from '../components/Markdown'
+import { SessionsPanel } from './SessionsPanel'
 
 // Per-render message model. The assistant message is an ordered
 // list of blocks so we can render reasoning / tool calls / text
@@ -30,6 +36,34 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
+// mToMsg turns a server-side Message into the UI's Msg union.
+// Reasoning + content are folded into a single assistant block
+// (text first, reasoning collapsible). Tool call/result pairs
+// become tool blocks when both halves are present in the
+// same message row.
+function mToMsg(m: import('../api').Message): Msg {
+  const id = m.id
+  const blocks: AssistantBlock[] = []
+  if (m.reasoning) blocks.push({ kind: 'reasoning', text: m.reasoning })
+  if (m.content) blocks.push({ kind: 'text', text: m.content })
+  if (m.tool_calls) {
+    try {
+      const arr = JSON.parse(m.tool_calls) as Array<{ id?: string; name?: string; input?: unknown }>
+      for (const tc of arr) {
+        blocks.push({
+          kind: 'tool',
+          id: tc.id ?? `${m.id}-tool`,
+          name: tc.name ?? '',
+          input: tc.input ?? {},
+        })
+      }
+    } catch {
+      // ignore malformed tool calls
+    }
+  }
+  return { kind: 'assistant', id, blocks }
+}
+
 function pickRisk(v: unknown): Risk {
   if (typeof v === 'string') {
     if (v === 'low' || v === 'medium' || v === 'high') return v
@@ -46,6 +80,13 @@ export function ChatView() {
   const [input, setInput] = React.useState('')
   const [ui, setUi] = React.useState<UIState>(idle)
   const [busy, setBusy] = React.useState(false)
+  // Sessions panel state
+  const [sessions, setSessions] = React.useState<Session[]>([])
+  const [searchQ, setSearchQ] = React.useState('')
+  const [sort, setSort] = React.useState<SessionSort>('updated_at')
+  const [order, setOrder] = React.useState<SessionOrder>('desc')
+  const [drafts, setDrafts] = React.useState<Record<string, string>>({})
+  const [panelCollapsed, setPanelCollapsed] = React.useState(false)
   const closeRef = React.useRef<(() => void) | null>(null)
   const streamRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -56,6 +97,21 @@ export function ChatView() {
       .then((res) => setClusters(res.clusters))
       .catch((err) => show(formatError(err)))
   }, [show])
+
+  // Sessions list. Debounced re-fetch on search/sort/order change
+  // so we don't spam the backend while the user types.
+  const refreshSessions = React.useCallback(async () => {
+    try {
+      const res = await listSessions({ sort, order, q: searchQ })
+      setSessions(res.sessions)
+    } catch (err) {
+      show(formatError(err))
+    }
+  }, [sort, order, searchQ, show])
+  React.useEffect(() => {
+    const t = setTimeout(() => { void refreshSessions() }, 250)
+    return () => clearTimeout(t)
+  }, [refreshSessions])
 
   // Auto-scroll to the bottom on each new message. Cheap enough that we
   // do it unconditionally on every render — the volume is low.
@@ -105,6 +161,104 @@ export function ChatView() {
 
   function pushSystem(text: string) {
     setMsgs((m) => [...m, { kind: 'system', id: rid(), text }])
+  }
+
+  async function switchSession(newId: string) {
+    if (!newId || newId === sessionId) return
+    if (ui.kind === 'streaming') {
+      show('请先停止当前会话')
+      return
+    }
+    // Stash the outgoing draft so the user can come back to it.
+    const nextDrafts = { ...drafts }
+    if (sessionId) nextDrafts[sessionId] = input
+    setDrafts(nextDrafts)
+
+    setSessionId(newId)
+    setInput(nextDrafts[newId] ?? '')
+    setMsgs([])
+
+    try {
+      const { messages } = await listMessages(newId)
+      setMsgs(messages.map(mToMsg))
+      const session = await getSession(newId)
+      if (session.cluster_id) setClusterId(session.cluster_id)
+    } catch (err) {
+      show(formatError(err))
+    }
+  }
+
+  async function handleCreateSession() {
+    if (ui.kind === 'streaming') {
+      show('请先停止当前会话')
+      return
+    }
+    try {
+      const created = await createSession({
+        title: '新会话',
+        cluster_id: clusterId || undefined,
+      })
+      await refreshSessions()
+      await switchSession(created.id)
+    } catch (err) {
+      show(formatError(err))
+    }
+  }
+
+  async function handleRenameSession(id: string, title: string) {
+    try {
+      await renameSession(id, title)
+      await refreshSessions()
+    } catch (err) {
+      show(formatError(err))
+    }
+  }
+
+  async function handleDeleteSession(id: string) {
+    if (id === sessionId) {
+      if (ui.kind === 'streaming') {
+        show('请先停止当前会话')
+        return
+      }
+      const nextDrafts = { ...drafts }
+      delete nextDrafts[id]
+      setDrafts(nextDrafts)
+      setSessionId('')
+      setInput('')
+      setMsgs([])
+    }
+    try {
+      await deleteSession(id)
+      await refreshSessions()
+    } catch (err) {
+      show(formatError(err))
+    }
+  }
+
+  async function handleBulkClear() {
+    try {
+      await bulkDeleteSessions()
+      setSessionId('')
+      setInput('')
+      setMsgs([])
+      setDrafts({})
+      await refreshSessions()
+    } catch (err) {
+      show(formatError(err))
+    }
+  }
+
+  function clusterNameById(id: string): string {
+    return clusters.find((c) => c.id === id)?.name ?? id.slice(0, 8)
+  }
+
+  function relativeTime(epochSecs: number): string {
+    const diff = Math.floor(Date.now() / 1000) - epochSecs
+    if (diff < 60) return '刚刚'
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+    if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+    if (diff < 86400 * 30) return `${Math.floor(diff / 86400)} 天前`
+    return new Date(epochSecs * 1000).toLocaleDateString()
   }
 
   function canSend(): boolean {
@@ -308,7 +462,35 @@ export function ChatView() {
   const inputDisabled = ui.kind !== 'idle'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', minHeight: 0 }}>
+      {!panelCollapsed && (
+        <SessionsPanel
+          sessions={sessions}
+          activeId={sessionId}
+          streaming={ui.kind === 'streaming'}
+          searchQ={searchQ}
+          sort={sort}
+          order={order}
+          onSearch={setSearchQ}
+          onSort={(s, o) => { setSort(s); setOrder(o) }}
+          onSelect={switchSession}
+          onCreate={handleCreateSession}
+          onRename={handleRenameSession}
+          onDelete={handleDeleteSession}
+          onBulkClear={handleBulkClear}
+          clusterNameById={clusterNameById}
+          relativeTime={relativeTime}
+        />
+      )}
+      <button
+        onClick={() => setPanelCollapsed((p) => !p)}
+        className="panel-toggle"
+        data-testid="panel-toggle"
+        title={panelCollapsed ? '展开会话列表' : '折叠会话列表'}
+      >
+        {panelCollapsed ? '»' : '«'}
+      </button>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
       <div className="toolbar">
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           集群:
@@ -376,6 +558,7 @@ export function ChatView() {
       {ui.kind === 'ask_user' && (
         <AskUserForm ask={ui.ask} onSubmit={(a) => void submitAsk(a)} busy={busy} />
       )}
+    </div>
     </div>
   )
 }
