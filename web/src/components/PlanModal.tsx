@@ -1,5 +1,6 @@
 import type { PendingPlan } from '../state'
 import { RiskBadge } from './RiskBadge'
+import { Markdown } from './Markdown'
 
 export function PlanModal({
   plan,
@@ -20,7 +21,9 @@ export function PlanModal({
           <RiskBadge risk={plan.risk} />
           <span className="muted" style={{ marginLeft: 8 }}>plan_id: {plan.planId}</span>
         </div>
-        <p>{plan.summary || '(无摘要)'}</p>
+        <div className="md">
+          <Markdown source={plan.summary || '_(无摘要)_'} />
+        </div>
         {plan.diffs.length > 0 && (
           <details open>
             <summary>{plan.diffs.length} 个变更</summary>

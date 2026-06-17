@@ -5,19 +5,21 @@ import { useToast } from '../components/ToastProvider'
 import { idle, PendingPlan, Risk, UIState } from '../state'
 import { PlanModal } from '../components/PlanModal'
 import { AskUserForm } from '../components/AskUserForm'
+import { Markdown } from '../components/Markdown'
 
-// Per-render message model. The wire format is more verbose; we fold it
-// into a render-friendly shape here so the JSX stays simple.
-type ToolRow = {
-  id: string
-  name: string
-  input: unknown
-  result?: { ok: true; output: unknown } | { ok: false; error: string }
-}
+// Per-render message model. The assistant message is an ordered
+// list of blocks so we can render reasoning / tool calls / text
+// in the actual order the events arrived — a multi-step agent
+// turn interleaves them, and we don't want to squash them into
+// a single (reasoning, text, tools[]) tuple.
+type AssistantBlock =
+  | { kind: 'reasoning'; text: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool'; id: string; name: string; input: unknown; result?: { ok: true; output: unknown } | { ok: false; error: string } }
 
 type Msg =
   | { kind: 'user'; id: string; text: string }
-  | { kind: 'assistant'; id: string; text: string; reasoning: string; tools: ToolRow[] }
+  | { kind: 'assistant'; id: string; blocks: AssistantBlock[] }
   | { kind: 'system'; id: string; text: string }
 
 function rid(): string {
@@ -64,8 +66,35 @@ export function ChatView() {
 
   function appendAssistant(): string {
     const id = rid()
-    setMsgs((m) => [...m, { kind: 'assistant', id, text: '', reasoning: '', tools: [] }])
+    setMsgs((m) => [...m, { kind: 'assistant', id, blocks: [] }])
     return id
+  }
+
+  // Helpers that mutate the block list for an assistant message.
+  // All event handlers go through these so the blocks array stays
+  // the single source of truth for what got rendered.
+  function appendBlock(id: string, block: AssistantBlock) {
+    patchAssistant(id, (m) => ({ ...m, blocks: [...m.blocks, block] }))
+  }
+  function appendToLastBlock(id: string, kind: 'reasoning' | 'text', chunk: string) {
+    patchAssistant(id, (m) => {
+      const blocks = m.blocks.slice()
+      // If the last block is the same kind, grow it; otherwise start a new one.
+      const n = blocks.length
+      if (n > 0 && blocks[n - 1].kind === kind) {
+        const last = blocks[n - 1] as Extract<AssistantBlock, { kind: 'reasoning' | 'text' }>
+        blocks[n - 1] = { ...last, text: last.text + chunk }
+      } else {
+        blocks.push(kind === 'reasoning' ? { kind: 'reasoning', text: chunk } : { kind: 'text', text: chunk })
+      }
+      return { ...m, blocks }
+    })
+  }
+  function setToolResult(id: string, toolId: string, result: NonNullable<Extract<AssistantBlock, { kind: 'tool' }>['result']>) {
+    patchAssistant(id, (m) => ({
+      ...m,
+      blocks: m.blocks.map((b) => (b.kind === 'tool' && b.id === toolId ? { ...b, result } : b)),
+    }))
   }
 
   function patchAssistant(id: string, fn: (m: Extract<Msg, { kind: 'assistant' }>) => Extract<Msg, { kind: 'assistant' }>) {
@@ -116,12 +145,12 @@ export function ChatView() {
           }
           case 'reasoning': {
             const t = isObject(payload) && typeof payload.text === 'string' ? payload.text : ''
-            patchAssistant(assistantId, (m) => ({ ...m, reasoning: m.reasoning + t }))
+            if (t) appendToLastBlock(assistantId, 'reasoning', t)
             break
           }
           case 'token': {
             const t = isObject(payload) && typeof payload.text === 'string' ? payload.text : ''
-            patchAssistant(assistantId, (m) => ({ ...m, text: m.text + t }))
+            if (t) appendToLastBlock(assistantId, 'text', t)
             break
           }
           case 'tool_call': {
@@ -129,10 +158,7 @@ export function ChatView() {
             const id = typeof payload.id === 'string' ? payload.id : ''
             const name = typeof payload.name === 'string' ? payload.name : ''
             const input = payload.input
-            patchAssistant(assistantId, (m) => ({
-              ...m,
-              tools: [...m.tools, { id, name, input }],
-            }))
+            appendBlock(assistantId, { kind: 'tool', id, name, input })
             break
           }
           case 'tool_result': {
@@ -140,19 +166,11 @@ export function ChatView() {
             const id = typeof payload.id === 'string' ? payload.id : ''
             const errMsg = typeof payload.error === 'string' ? payload.error : ''
             const output = payload.output
-            patchAssistant(assistantId, (m) => ({
-              ...m,
-              tools: m.tools.map((t) =>
-                t.id === id
-                  ? {
-                      ...t,
-                      result: errMsg
-                        ? { ok: false, error: errMsg }
-                        : { ok: true, output },
-                    }
-                  : t
-              ),
-            }))
+            setToolResult(
+              assistantId,
+              id,
+              errMsg ? { ok: false, error: errMsg } : { ok: true, output },
+            )
             break
           }
           case 'plan_ready': {
@@ -380,39 +398,54 @@ function Bubble({ msg }: { msg: Msg }) {
   // assistant
   return (
     <div className="msg assistant">
-      {msg.reasoning && (
-        <details style={{ marginBottom: 6 }}>
-          <summary className="muted">思考过程</summary>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{msg.reasoning}</pre>
-        </details>
-      )}
-      {msg.text && <div className="bubble assistant">{msg.text}</div>}
-      {msg.tools.map((t) => (
-        <details
-          key={t.id}
-          className={`bubble ${t.result ? (t.result.ok ? 'tool-ok' : 'tool-err') : ''}`}
-          style={{ marginTop: 6 }}
-        >
-          <summary>
-            🔧 {t.name}
-            {t.result && (
-              <span className="muted" style={{ marginLeft: 8 }}>
-                {t.result.ok ? '✓' : '✗'}
-              </span>
-            )}
-          </summary>
-          <div style={{ marginTop: 6 }}>
-            <div className="muted">输入:</div>
-            <pre>{formatJson(t.input)}</pre>
-            {t.result && (
-              <>
-                <div className="muted">{t.result.ok ? '输出:' : '错误:'}</div>
-                <pre>{t.result.ok ? formatJson(t.result.output) : t.result.error}</pre>
-              </>
-            )}
-          </div>
-        </details>
-      ))}
+      {msg.blocks.map((block, i) => {
+        switch (block.kind) {
+          case 'reasoning':
+            if (!block.text) return null
+            return (
+              <details key={i} style={{ marginBottom: 6 }}>
+                <summary className="muted">思考过程</summary>
+                <pre style={{ whiteSpace: 'pre-wrap' }}>{block.text}</pre>
+              </details>
+            )
+          case 'text':
+            if (!block.text) return null
+            return (
+              <div key={i} className="bubble assistant">
+                <Markdown source={block.text} />
+              </div>
+            )
+          case 'tool': {
+            const t = block
+            return (
+              <details
+                key={i}
+                className={`bubble ${t.result ? (t.result.ok ? 'tool-ok' : 'tool-err') : ''}`}
+                style={{ marginTop: 6 }}
+              >
+                <summary>
+                  🔧 {t.name}
+                  {t.result && (
+                    <span className="muted" style={{ marginLeft: 8 }}>
+                      {t.result.ok ? '✓' : '✗'}
+                    </span>
+                  )}
+                </summary>
+                <div style={{ marginTop: 6 }}>
+                  <div className="muted">输入:</div>
+                  <pre>{formatJson(t.input)}</pre>
+                  {t.result && (
+                    <>
+                      <div className="muted">{t.result.ok ? '输出:' : '错误:'}</div>
+                      <pre>{t.result.ok ? formatJson(t.result.output) : t.result.error}</pre>
+                    </>
+                  )}
+                </div>
+              </details>
+            )
+          }
+        }
+      })}
     </div>
   )
 }

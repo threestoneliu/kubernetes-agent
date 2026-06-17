@@ -1,5 +1,6 @@
 import React from 'react'
 import type { PendingAsk } from '../state'
+import { Markdown } from './Markdown'
 
 export function AskUserForm({
   ask,
@@ -42,7 +43,7 @@ export function AskUserForm({
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal">
         <h2>{ask.multi ? '请选择(可多选)' : '请选择'}</h2>
-        <p>{ask.question}</p>
+        <div className="md"><Markdown source={ask.question} /></div>
         {hasOptions ? (
           <div className="form-grid" style={{ marginTop: 12 }}>
             {ask.options.map((opt) => (
