@@ -86,7 +86,7 @@ export function ChatView() {
   const [sort, setSort] = React.useState<SessionSort>('updated_at')
   const [order, setOrder] = React.useState<SessionOrder>('desc')
   const [drafts, setDrafts] = React.useState<Record<string, string>>({})
-  const [panelCollapsed, setPanelCollapsed] = React.useState(false)
+  const [_panelCollapsed, setPanelCollapsed] = React.useState(false)
   const closeRef = React.useRef<(() => void) | null>(null)
   const streamRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -463,33 +463,23 @@ export function ChatView() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', minHeight: 0 }}>
-      {!panelCollapsed && (
-        <SessionsPanel
-          sessions={sessions}
-          activeId={sessionId}
-          streaming={ui.kind === 'streaming'}
-          searchQ={searchQ}
-          sort={sort}
-          order={order}
-          onSearch={setSearchQ}
-          onSort={(s, o) => { setSort(s); setOrder(o) }}
-          onSelect={switchSession}
-          onCreate={handleCreateSession}
-          onRename={handleRenameSession}
-          onDelete={handleDeleteSession}
-          onBulkClear={handleBulkClear}
-          clusterNameById={clusterNameById}
-          relativeTime={relativeTime}
-        />
-      )}
-      <button
-        onClick={() => setPanelCollapsed((p) => !p)}
-        className="panel-toggle"
-        data-testid="panel-toggle"
-        title={panelCollapsed ? '展开会话列表' : '折叠会话列表'}
-      >
-        {panelCollapsed ? '»' : '«'}
-      </button>
+      <SessionsPanel
+        sessions={sessions}
+        activeId={sessionId}
+        streaming={ui.kind === 'streaming'}
+        searchQ={searchQ}
+        sort={sort}
+        order={order}
+        onSearch={setSearchQ}
+        onSort={(s, o) => { setSort(s); setOrder(o) }}
+        onSelect={switchSession}
+        onCreate={handleCreateSession}
+        onRename={handleRenameSession}
+        onDelete={handleDeleteSession}
+        onBulkClear={handleBulkClear}
+        clusterNameById={clusterNameById}
+        relativeTime={relativeTime}
+      />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
       <div className="toolbar">
         <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

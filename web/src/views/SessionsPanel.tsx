@@ -277,8 +277,8 @@ function SessionRow({
           <li
             className="danger"
             onClick={() => {
-              setMenuOpen(false)
               if (streaming) return
+              setMenuOpen(false)
               onDelete()
             }}
             style={streaming ? { opacity: 0.4, pointerEvents: 'none' } : {}}

@@ -94,5 +94,5 @@
 
 ## 11. 提交
 
-- [ ] 11.1 git commit：feat(web): dark pro theme — styles.css complete redesign
-- [ ] 11.2 推送 remote
+- [x] 11.1 git commit：feat(web): dark pro theme — styles.css complete redesign
+- [x] 11.2 推送 remote

@@ -1,44 +1,67 @@
+/* ============================================================
+   WebUI Theme System — Dark Pro (default) + Light override
+   Switch themes via document.documentElement.setAttribute('data-theme', theme)
+   ============================================================ */
+
+/* ── Dark Pro (default) ──────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg:          #1a1a2e;
-  --card-bg:     #252545;
-  --panel-bg:    #1e1e38;
-  --sidebar-bg:  #16162a;
-  --input-bg:    #252545;
-
-  /* Text */
-  --fg:          #e8e8f0;
-  --fg-title:    #f0f0ff;
-  --muted:       #7070a0;
-
-  /* Borders */
-  --border:      #2a2a4e;
-  --border-soft: #3a3a6a;
-
-  /* Primary accent — neon blue */
-  --primary:       #00D4FF;
-  --primary-dark:   #0088CC;
-  --primary-fg:     #0a0a1a;
-  --primary-glow:   rgba(0, 212, 255, 0.2);
-
-  /* Functional */
-  --danger:      #ff6b6b;
-  --ok-bg:       rgba(0, 212, 255, 0.12);
-  --err-bg:      rgba(255, 107, 107, 0.12);
-  --warn-bg:     rgba(251, 191, 36, 0.15);
-
-  /* Shadows */
-  --shadow-sm:   0 2px 8px rgba(0,0,0,0.3);
-  --shadow-md:   0 4px 16px rgba(0,0,0,0.3);
-  --shadow-lg:   0 8px 40px rgba(0,0,0,0.4);
-  --shadow-glow: 0 0 0 3px var(--primary-glow);
+  --bg:           #0d1117;
+  --bg-elevated:  #161b22;
+  --bg-sidebar:   #010409;
+  --fg:           #e6edf3;
+  --fg-muted:     #8b949e;
+  --border:        #21262d;
+  --border-soft:   #30363d;
+  --primary:       #58a6ff;
+  --primary-dark:   #0550ae;
+  --primary-fg:    #ffffff;
+  --primary-glow:  rgba(88, 166, 255, 0.15);
+  --ok:           #238636;
+  --ok-bg:        rgba(35, 134, 54, 0.15);
+  --warn:         #d29922;
+  --warn-bg:      rgba(210, 153, 34, 0.15);
+  --danger:       #f85149;
+  --danger-bg:    rgba(248, 81, 73, 0.12);
+  --tool-text:    #7ee787;
+  --shadow-sm:    0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md:    0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg:    0 8px 40px rgba(0, 0, 0, 0.5);
+  --shadow-glow:  0 0 0 3px var(--primary-glow);
 
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   color: var(--fg);
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
+/* ── Light Theme Override ──────────────────────────── */
+:root[data-theme="light"] {
+  --bg:           #ffffff;
+  --bg-elevated:  #ffffff;
+  --bg-sidebar:   #f6f8fa;
+  --fg:           #1f2328;
+  --fg-muted:     #656d76;
+  --border:        #d0d7de;
+  --border-soft:   #eaecef;
+  --primary:       #0969da;
+  --primary-dark:   #0550ae;
+  --primary-fg:    #ffffff;
+  --primary-glow:  rgba(9, 105, 218, 0.1);
+  --ok:           #1a7f37;
+  --ok-bg:        rgba(26, 127, 55, 0.1);
+  --warn:         #9a6700;
+  --warn-bg:      rgba(157, 103, 0, 0.1);
+  --danger:       #cf222e;
+  --danger-bg:    rgba(207, 34, 46, 0.08);
+  --tool-text:    #116329;
+  --shadow-sm:    0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md:    0 2px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg:    0 4px 24px rgba(0, 0, 0, 0.14);
+  --shadow-glow:  0 0 0 3px var(--primary-glow);
+}
+
+/* ── Reset & Base ─────────────────────────────────── */
 * { box-sizing: border-box; }
 
 html, body, #root {
@@ -48,19 +71,124 @@ html, body, #root {
   background: var(--bg);
 }
 
+/* ── App Shell — Three Column ─────────────────────── */
+.app {
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Left nav — 60px icon nav */
+.nav {
+  width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 4px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.nav-item {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--fg-muted);
+  transition: background 150ms, color 150ms;
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+
+.nav-item.active {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+
+/* Sessions panel — 240px middle column */
+.sessions-panel {
+  width: 240px;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Main content — right column */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Legacy sidebar (for ClusterView/PolicyView if they use it) */
+.sidebar {
+  width: 200px;
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-sidebar);
+  flex-shrink: 0;
+}
+
+.sidebar h1 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin: 0 0 16px 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sidebar button {
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+}
+
+.sidebar button.active {
+  background: var(--primary-glow);
+  color: var(--primary);
+  border-color: rgba(88, 166, 255, 0.3);
+  font-weight: 500;
+}
+
+/* ── Buttons ─────────────────────────────────────── */
 button {
   font: inherit;
   border: 1px solid var(--border);
-  background: var(--input-bg);
+  background: var(--bg-elevated);
   padding: 6px 12px;
   border-radius: 8px;
   cursor: pointer;
   color: var(--fg);
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background 150ms, border-color 150ms, box-shadow 150ms;
 }
 
 button:hover:not(:disabled) {
-  background: var(--card-bg);
+  background: var(--bg-elevated);
+  border-color: var(--border-soft);
 }
 
 button:disabled {
@@ -69,16 +197,16 @@ button:disabled {
 }
 
 button.primary {
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  background: var(--primary);
   color: var(--primary-fg);
   border-color: transparent;
-  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3);
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
 }
 
 button.primary:hover:not(:disabled) {
   filter: brightness(1.08);
-  box-shadow: 0 6px 24px rgba(0, 212, 255, 0.4);
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  box-shadow: 0 4px 16px rgba(88, 166, 255, 0.4);
+  background: var(--primary);
 }
 
 button.danger {
@@ -95,11 +223,11 @@ button:focus-visible {
 input, textarea, select {
   font: inherit;
   border: 1px solid var(--border);
-  background: var(--input-bg);
+  background: var(--bg-elevated);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   color: var(--fg);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 150ms, box-shadow 150ms;
 }
 
 input:focus, textarea:focus, select:focus {
@@ -111,64 +239,14 @@ input:focus, textarea:focus, select:focus {
 textarea {
   font-family: 'Menlo', 'Consolas', monospace;
   font-size: 12px;
-  background: var(--input-bg);
-  color: var(--fg);
 }
 
-.app {
-  display: flex;
-  height: 100vh;
-}
-
-.sidebar {
-  width: 200px;
-  border-right: 1px solid var(--border);
-  padding: 20px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background: var(--sidebar-bg);
-  flex-shrink: 0;
-}
-
-.sidebar h1 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 0 0 20px 4px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.sidebar button {
-  text-align: left;
-  width: 100%;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--muted);
-}
-
-.sidebar button.active {
-  background: rgba(0, 212, 255, 0.12);
-  color: var(--primary);
-  border-color: rgba(0, 212, 255, 0.3);
-  font-weight: 500;
-}
-
-.main {
-  flex: 1;
-  padding: 20px 24px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-}
-
+/* ── Cards & Rows ─────────────────────────────────── */
 .card {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 12px;
-  background: var(--card-bg);
+  background: var(--bg-elevated);
 }
 
 .row {
@@ -180,47 +258,44 @@ textarea {
   color: var(--fg);
 }
 
-.row:last-child {
-  border-bottom: none;
-}
-
-.row:hover {
-  background: rgba(255,255,255,0.02);
-}
+.row:last-child { border-bottom: none; }
+.row:hover { background: rgba(255,255,255,0.02); }
 
 .muted {
-  color: var(--muted);
+  color: var(--fg-muted);
   font-size: 12px;
 }
 
+/* ── Badges ─────────────────────────────────────── */
 .badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 12px;
   border: 1px solid var(--border);
-  background: var(--panel-bg);
-  color: var(--muted);
+  background: var(--bg-sidebar);
+  color: var(--fg-muted);
 }
 
 .badge.allow {
   background: var(--ok-bg);
-  border-color: rgba(0,212,255,0.3);
-  color: var(--primary);
+  border-color: var(--ok);
+  color: var(--ok);
 }
 
 .badge.confirm {
   background: var(--warn-bg);
-  border-color: rgba(251,191,36,0.3);
-  color: #fbbf24;
+  border-color: var(--warn);
+  color: var(--warn);
 }
 
 .badge.deny {
-  background: var(--err-bg);
-  border-color: rgba(255,107,107,0.3);
+  background: var(--danger-bg);
+  border-color: var(--danger);
   color: var(--danger);
 }
 
+/* ── Toolbar ─────────────────────────────────────── */
 .toolbar {
   display: flex;
   gap: 8px;
@@ -228,20 +303,7 @@ textarea {
   margin-bottom: 12px;
 }
 
-/* ── Sessions Panel ──────────────────────────────── */
-
-.sessions-panel {
-  width: 240px;
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
+/* ── Sessions Panel ─────────────────────────────────── */
 .session-list {
   list-style: none;
   margin: 0;
@@ -249,18 +311,19 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .session-row {
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 120ms, border-color 120ms;
   border: 1px solid transparent;
   display: flex;
   align-items: center;
   gap: 8px;
-  position: relative;
 }
 
 .session-row:hover {
@@ -268,8 +331,8 @@ textarea {
 }
 
 .session-row.active {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: rgba(0, 212, 255, 0.25);
+  background: var(--primary-glow);
+  border-color: rgba(88, 166, 255, 0.3);
 }
 
 .row-main {
@@ -291,7 +354,7 @@ textarea {
 
 .time-line {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--fg-muted);
 }
 
 .cluster-tag {
@@ -299,9 +362,9 @@ textarea {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.12);
+  background: var(--primary-glow);
   color: var(--primary);
-  border: 1px solid rgba(0, 212, 255, 0.25);
+  border: 1px solid rgba(88, 166, 255, 0.25);
   flex-shrink: 0;
 }
 
@@ -309,7 +372,7 @@ textarea {
   background: transparent;
   border: none;
   padding: 4px 6px;
-  color: var(--muted);
+  color: var(--fg-muted);
   cursor: pointer;
   border-radius: 6px;
   font-size: 14px;
@@ -325,7 +388,7 @@ textarea {
   position: absolute;
   right: 0;
   top: 100%;
-  background: var(--card-bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 4px;
@@ -344,26 +407,17 @@ textarea {
   color: var(--fg);
 }
 
-.row-menu li:hover {
-  background: rgba(255,255,255,0.06);
-}
-
-.row-menu li.danger {
-  color: var(--danger);
-}
+.row-menu li:hover { background: rgba(255,255,255,0.06); }
+.row-menu li.danger { color: var(--danger); }
 
 .panel-footer {
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
 
-.panel-footer button {
-  width: 100%;
-  justify-content: center;
-}
+.panel-footer button { width: 100%; justify-content: center; }
 
-/* ── Chat Stream / Bubbles ──────────────────────── */
-
+/* ── Chat Bubbles ─────────────────────────────────── */
 .chat-stream {
   flex: 1;
   overflow-y: auto;
@@ -388,7 +442,7 @@ textarea {
 .msg.tool { align-self: stretch; align-items: stretch; max-width: 100%; }
 
 .bubble {
-  padding: 12px 16px;
+  padding: 11px 16px;
   border-radius: 16px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -404,25 +458,25 @@ textarea {
 }
 
 .bubble.assistant {
-  background: var(--card-bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--border-soft);
+  color: var(--fg);
   border-bottom-left-radius: 4px;
   box-shadow: var(--shadow-sm);
-  color: var(--fg);
 }
 
 .bubble.tool-ok {
-  background: var(--panel-bg);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  color: var(--primary);
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(126, 231, 135, 0.3);
+  color: var(--tool-text);
   border-bottom-left-radius: 4px;
   font-size: 12px;
   font-family: 'Menlo', 'Consolas', monospace;
 }
 
 .bubble.tool-err {
-  background: rgba(255, 107, 107, 0.08);
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  background: var(--danger-bg);
+  border: 1px solid rgba(248, 81, 73, 0.3);
   color: var(--danger);
   border-bottom-left-radius: 4px;
   font-size: 12px;
@@ -430,12 +484,12 @@ textarea {
 }
 
 .reasoning {
-  background: var(--panel-bg);
+  background: var(--bg-elevated);
   border-left: 3px solid var(--primary);
-  padding: 10px 14px;
+  padding: 9px 14px;
   border-radius: 0 8px 8px 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-muted);
   font-style: italic;
   max-width: 85%;
   align-self: flex-start;
@@ -445,13 +499,13 @@ textarea {
 details summary {
   cursor: pointer;
   user-select: none;
-  color: var(--muted);
+  color: var(--fg-muted);
   font-size: 12px;
   padding: 2px 0;
 }
 
 details pre {
-  background: var(--panel-bg);
+  background: var(--bg-sidebar);
   padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -463,8 +517,7 @@ details pre {
   margin-top: 8px;
 }
 
-/* ── Composer ───────────────────────────────────── */
-
+/* ── Composer ─────────────────────────────────────── */
 .composer {
   display: flex;
   gap: 10px;
@@ -475,16 +528,15 @@ details pre {
 
 .composer input {
   flex: 1;
-  padding: 12px 16px;
+  padding: 11px 16px;
   border-radius: 12px;
-  background: var(--card-bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   font-size: 14px;
   color: var(--fg);
 }
 
 /* ── Modals ─────────────────────────────────────── */
-
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -497,7 +549,7 @@ details pre {
 }
 
 .modal {
-  background: var(--card-bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 24px;
@@ -509,18 +561,13 @@ details pre {
 }
 
 .modal h2, .modal h3 {
-  color: var(--fg-title);
+  color: var(--fg);
   font-weight: 600;
   margin: 0 0 12px 0;
 }
 
-.modal h2 {
-  font-size: 18px;
-}
-
-.modal h3 {
-  font-size: 15px;
-}
+.modal h2 { font-size: 18px; }
+.modal h3 { font-size: 15px; }
 
 .modal-actions {
   display: flex;
@@ -530,9 +577,9 @@ details pre {
 }
 
 .modal-actions button.cancel {
-  background: var(--panel-bg);
+  background: var(--bg-sidebar);
   border: 1px solid var(--border);
-  color: var(--muted);
+  color: var(--fg-muted);
 }
 
 .toast {
@@ -549,8 +596,7 @@ details pre {
   max-width: 80vw;
 }
 
-/* ── Forms ──────────────────────────────────────── */
-
+/* ── Forms ─────────────────────────────────────── */
 .form-grid {
   display: grid;
   gap: 8px;
@@ -561,28 +607,22 @@ details pre {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--fg-muted);
   font-weight: 500;
 }
 
-.form-grid textarea {
-  min-height: 160px;
-}
-
-.policy-yaml {
-  min-height: 240px;
-}
+.form-grid textarea { min-height: 160px; }
+.policy-yaml { min-height: 240px; }
 
 /* ── Lists ──────────────────────────────────────── */
-
 .list {
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--card-bg);
+  background: var(--bg-elevated);
   padding: 8px 12px;
 }
 
 .list:empty::before {
   content: '暂无数据';
-  color: var(--muted);
+  color: var(--fg-muted);
 }
