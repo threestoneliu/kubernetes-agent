@@ -142,6 +142,7 @@ func chatHandler(d Deps) http.HandlerFunc {
 		// would close channels that nobody is waiting on.
 		if d.Sessions != nil {
 			d.Sessions.Set(resolvedID, runner.Session)
+			defer d.Sessions.Drop(resolvedID)
 		}
 
 		done := make(chan struct{})
