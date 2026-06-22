@@ -67,9 +67,10 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 	if err != nil {
 		return nil, err
 	}
-	gvr := f.Resolver(in.ClusterID).Resolve(in.Resource)
+	resolver := f.Resolver(in.ClusterID)
+	gvr := resolver.Resolve(in.Resource)
 
-	urlPath := buildListURL(cfg.Host, gvr, in.Namespace, in.LabelSelector)
+	urlPath := buildListURL(resolver, in.Resource, cfg.Host, gvr, in.Namespace, in.LabelSelector)
 
 	req, err := http.NewRequest("GET", urlPath, nil)
 	if err != nil {
@@ -114,13 +115,11 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 }
 
 // buildListURL constructs the correct API path for a resource.
-// Cluster-scoped resources (nodes, persistentvolumes, namespaces, etc.)
-// use /api/v1/<resource> or /apis/<group>/<version>/<resource>.
-// Namespaced resources use /api/v1/namespaces/<ns>/<resource> or
-// /apis/<group>/<version>/namespaces/<ns>/<resource>.
-func buildListURL(host string, gvr schema.GroupVersionResource, namespace, labelSelector string) string {
+// It queries the resolver's discovery cache (APIResource.Namespaced field)
+// to determine whether to use a cluster-scoped or namespaced path.
+func buildListURL(resolver *Resolver, resource, host string, gvr schema.GroupVersionResource, namespace, labelSelector string) string {
 	// Cluster-scoped resources don't take a namespace segment.
-	if isClusterScoped(gvr.Resource) {
+	if !resolver.IsNamespaced(resource) {
 		var base string
 		if gvr.Group == "" {
 			base = fmt.Sprintf("%s/api/%s/%s", host, gvr.Version, gvr.Resource)
@@ -148,23 +147,4 @@ func buildListURL(host string, gvr schema.GroupVersionResource, namespace, label
 		return base + "?labelSelector=" + url.QueryEscape(labelSelector)
 	}
 	return base
-}
-
-// isClusterScoped returns true for known cluster-scoped (non-namespaced)
-// built-in resources. These resources do NOT live under
-// /namespaces/<ns>/ — their path is /api/v1/<resource> (core group)
-// or /apis/<group>/<version>/<resource> (named groups).
-func isClusterScoped(resource string) bool {
-	// This is the exhaustive list of built-in cluster-scoped resources
-	// users are likely to list. Cluster-scoped CRDs are handled by the
-	// discovery fallback (they'll 404 on the namespaced path, which is
-	// the same failure mode as before — not a regression).
-	switch resource {
-	case "nodes", "namespaces", "persistentvolumes", "storageclasses",
-		"componentstatuses", "nodes/status", "namespaces/status",
-		"persistentvolumes/status", "events":
-		return true
-	default:
-		return false
-	}
 }

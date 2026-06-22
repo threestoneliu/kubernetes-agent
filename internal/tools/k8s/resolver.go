@@ -14,14 +14,20 @@ import (
 // returned with empty Group/Version so the dynamic client can run
 // its own discovery.
 //
+// Resolver also caches whether each resource is namespaced or
+// cluster-scoped (from APIResource.Namespaced), so callers can
+// construct correct API paths without hard-coding knowledge of
+// which resources are cluster-scoped.
+//
 // Resolver is safe for concurrent use and is created lazily per
 // cluster by KubeconfigClientFactory.Resolver.
 type Resolver struct {
 	discover discovery.DiscoveryInterface
 
-	mu     sync.RWMutex
-	cache  map[string]schema.GroupVersionResource
-	loaded bool // true after the first discovery fetch (success or fail)
+	mu         sync.RWMutex
+	cache      map[string]schema.GroupVersionResource
+	namespaced map[string]bool // true = namespaced, false = cluster-scoped
+	loaded     bool            // true after the first discovery fetch (success or fail)
 }
 
 // NewResolver wraps a discovery client. Pass the result of
@@ -33,6 +39,8 @@ func NewResolver(d discovery.DiscoveryInterface) *Resolver {
 // ResolverFromMap builds a Resolver pre-populated from a static
 // resource→GVR map. Tests use this to skip the discovery round-trip
 // when the fake cluster does not implement the discovery API.
+// The namespaced map is left nil, meaning all resources fall through
+// to wellKnownFallback which does not track namespaced info.
 func ResolverFromMap(m map[string]schema.GroupVersionResource) *Resolver {
 	c := make(map[string]schema.GroupVersionResource, len(m))
 	for k, v := range m {
@@ -69,10 +77,40 @@ func (r *Resolver) Resolve(resource string) schema.GroupVersionResource {
 	return wellKnownFallback(resource)
 }
 
+// IsNamespaced returns whether the resource is namespace-scoped (true)
+// or cluster-scoped (false). It queries discovery on first use and caches
+// the result. For resources not found in discovery, it falls back to
+// WellKnownGV; if still unknown, it returns true (assumes namespaced for
+// safety — cluster-scoped resources that aren't found will 404, which is
+// the same failure mode as before).
+func (r *Resolver) IsNamespaced(resource string) bool {
+	r.mu.RLock()
+	if r.loaded {
+		if ns, ok := r.namespaced[resource]; ok {
+			r.mu.RUnlock()
+			return ns
+		}
+		r.mu.RUnlock()
+		return wellKnownNamespacedFallback(resource)
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.loaded {
+		r.refreshLocked()
+	}
+	if ns, ok := r.namespaced[resource]; ok {
+		return ns
+	}
+	return wellKnownNamespacedFallback(resource)
+}
+
 // refreshLocked calls the discovery API and populates the cache.
 // Must be called with r.mu held in write mode.
 func (r *Resolver) refreshLocked() {
 	r.cache = map[string]schema.GroupVersionResource{}
+	r.namespaced = map[string]bool{}
 	if r.discover == nil {
 		r.loaded = true
 		return
@@ -103,6 +141,7 @@ func (r *Resolver) refreshLocked() {
 				Version:  gv.Version,
 				Resource: apiRes.Name,
 			}
+			r.namespaced[apiRes.Name] = apiRes.Namespaced
 		}
 	}
 	r.loaded = true
@@ -115,6 +154,7 @@ func (r *Resolver) Invalidate() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cache = nil
+	r.namespaced = nil
 	r.loaded = false
 }
 
@@ -131,6 +171,20 @@ func wellKnownFallback(resource string) schema.GroupVersionResource {
 		}
 	}
 	return schema.GroupVersionResource{Resource: resource}
+}
+
+// wellKnownNamespacedFallback mirrors wellKnownFallback but returns
+// whether the resource is namespace-scoped. If the resource is unknown
+// we return true (assume namespaced) since cluster-scoped resources
+// that aren't found will 404 anyway.
+func wellKnownNamespacedFallback(resource string) bool {
+	switch resource {
+	case "nodes", "namespaces", "persistentvolumes", "storageclasses",
+		"componentstatuses", "events":
+		return false
+	default:
+		return true
+	}
 }
 
 func containsSlash(s string) bool {
