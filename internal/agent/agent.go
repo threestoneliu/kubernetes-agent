@@ -114,17 +114,10 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 	// LLM keeps calling tools without ever producing a final
 	// message. 32 steps is well above any realistic agent run.
 	const outerStepLimit = 32
-	// turnAssistant / turnToolResults accumulate the entire turn's
-	// content across outer steps. They're appended to on every step
-	// and persisted in one batch when the turn ends.
-	var (
-		turnAssistant    []llm.ContentPart
-		turnToolResults  []llm.ContentPart
-		turnHasToolCalls bool
-	)
+	// msgs accumulates the full in-memory transcript (for LLM context).
+	// Each LLM API call is persisted at EventMessageEnd so that on reload
+	// the frontend sees the exact same sequence as during streaming.
 	for step := 0; step < outerStepLimit; step++ {
-		// pendingAssistant / pendingToolResults are populated by
-		// consumeStream for this one Chat call.
 		var pendingAssistant []llm.ContentPart
 		var pendingToolResults []llm.ContentPart
 		var streamErr error
@@ -143,10 +136,9 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 			}
 			hadToolCall, streamErr = r.consumeStream(ctx, stream, &pendingAssistant, &pendingToolResults)
 			_ = stream.Close()
-			break // consumeStream handles its own retries via its caller (Run outer loop)
+			break
 		}
 
-		// If the stream errored terminally, classify and return.
 		if streamErr != nil {
 			if errors.Is(streamErr, context.Canceled) || errors.Is(streamErr, context.DeadlineExceeded) {
 				return streamErr
@@ -155,20 +147,7 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 			return streamErr
 		}
 
-		// Accumulate this step into the turn-wide buffers.
-		if len(pendingAssistant) > 0 {
-			turnAssistant = append(turnAssistant, pendingAssistant...)
-		}
-		for _, p := range pendingToolResults {
-			turnToolResults = append(turnToolResults, p)
-		}
-		if hadToolCall {
-			turnHasToolCalls = true
-		}
-
-		// Append the assistant message + any tool results to the
-		// in-memory transcript. The LLM will see this on the next
-		// Chat call.
+		// Append to in-memory transcript so the LLM sees it on the next call.
 		if len(pendingAssistant) > 0 {
 			msgs = append(msgs, transcriptMessage{Role: llm.RoleAssistant, Parts: pendingAssistant})
 		}
@@ -176,22 +155,20 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 			msgs = append(msgs, transcriptMessage{Role: llm.RoleTool, Parts: []llm.ContentPart{p}})
 		}
 
-		// If the LLM called a tool this turn, loop again so the
-		// model sees the tool result.
-		if hadToolCall {
-			continue
-		}
-
-		// Final turn: persist and return. The persisted batch
-		// includes any earlier steps' tool calls/results so a
-		// future reload can replay the full turn.
-		_ = turnHasToolCalls
+		// Persist this LLM call's output at EventMessageEnd.
+		// hadToolCall only controls whether we loop for another call,
+		// not whether we persist this call's content.
 		if r.Store != nil {
-			if err := r.persistTurn(ctx, turnAssistant, turnToolResults); err != nil {
+			if err := r.persistTurn(ctx, pendingAssistant, pendingToolResults); err != nil {
 				_ = r.emitError("store_error", err.Error(), true)
 				return err
 			}
 		}
+
+		if hadToolCall {
+			continue
+		}
+
 		return nil
 	}
 	return errors.New("agent.Run: outer step limit exceeded")
@@ -411,35 +388,35 @@ func toLLMMessages(msgs []transcriptMessage) []llm.Message {
 	return out
 }
 
-// persistTurn writes the assistant message and tool results to the
-// store as a single transaction. The assistant message is recorded
-// with the full content (text + tool calls) and tool results get
-// one row each.
+// persistTurn writes one assistant message row per LLM streaming response,
+// storing only the fields that were present in that response (reasoning,
+// content, tool_calls). Tool results are stored as separate rows.
 func (r *Runner) persistTurn(ctx context.Context, assistant []llm.ContentPart, toolResults []llm.ContentPart) error {
 	now := r.now().Unix()
 	stMsgs := make([]store.Message, 0, 1+len(toolResults))
 
-	// Assistant message: split content into text vs tool_calls JSON.
+	// Merge this streaming response's parts into one assistant message.
+	// Only non-empty fields are set.
 	var textContent strings.Builder
-	var toolCallsJSON strings.Builder
+	var reasoningContent strings.Builder
+	var toolCalls []map[string]any
 	for _, p := range assistant {
 		switch p.Type {
 		case "text":
 			textContent.WriteString(p.Text)
 		case "reasoning":
-			// Reasoning goes into the dedicated column.
+			reasoningContent.WriteString(p.Text)
 		case "tool_call":
-			tc := map[string]any{
+			toolCalls = append(toolCalls, map[string]any{
 				"id":    p.ToolCallID,
 				"name":  p.ToolName,
 				"input": json.RawMessage(p.Input),
-			}
-			b, _ := json.Marshal(tc)
-			toolCallsJSON.Write(b)
-			toolCallsJSON.WriteByte('\n')
+			})
 		}
 	}
+
 	tc := textContent.String()
+	reasoning := reasoningContent.String()
 	asstMsg := store.Message{
 		ID:        uuid.NewString(),
 		SessionID: r.Session.ID,
@@ -449,17 +426,18 @@ func (r *Runner) persistTurn(ctx context.Context, assistant []llm.ContentPart, t
 	if tc != "" {
 		asstMsg.Content = &tc
 	}
-	if toolCallsJSON.Len() > 0 {
-		s := toolCallsJSON.String()
+	if reasoning != "" {
+		asstMsg.Reasoning = &reasoning
+	}
+	if len(toolCalls) > 0 {
+		b, _ := json.Marshal(toolCalls)
+		s := string(b)
 		asstMsg.ToolCalls = &s
 	}
 	stMsgs = append(stMsgs, asstMsg)
 
-	// Tool result rows. The store schema has no tool_name column;
-	// we encode name + id + output together into the content field
-	// so a follow-up reload can reconstruct the wire shape.
+	// Tool results: one row per tool call.
 	for _, p := range toolResults {
-		id := uuid.NewString()
 		tr := map[string]any{
 			"tool_call_id": p.ToolCallID,
 			"name":         p.ToolName,
@@ -470,7 +448,7 @@ func (r *Runner) persistTurn(ctx context.Context, assistant []llm.ContentPart, t
 		out := string(b)
 		tcid := p.ToolCallID
 		stMsgs = append(stMsgs, store.Message{
-			ID:         id,
+			ID:         uuid.NewString(),
 			SessionID:  r.Session.ID,
 			Role:       string(llm.RoleTool),
 			Content:    &out,
@@ -478,6 +456,7 @@ func (r *Runner) persistTurn(ctx context.Context, assistant []llm.ContentPart, t
 			CreatedAt:  now,
 		})
 	}
+
 	return r.Store.BatchInsertMessages(ctx, stMsgs)
 }
 

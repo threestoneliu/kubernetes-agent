@@ -96,7 +96,7 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 func (d *DB) ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, session_id, role, content, tool_calls, tool_call_id, reasoning, created_at
-		 FROM messages WHERE session_id = ? ORDER BY created_at, id`, sessionID)
+		 FROM messages WHERE session_id = ? ORDER BY ROWID ASC`, sessionID)
 	if err != nil {
 		return nil, err
 	}

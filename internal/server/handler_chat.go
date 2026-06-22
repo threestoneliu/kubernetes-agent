@@ -87,6 +87,17 @@ func chatHandler(d Deps) http.HandlerFunc {
 			resolvedID = row.ID
 		}
 
+			// Persist user message so it survives session reload.
+			userMsg := store.Message{
+				ID:        uuid.NewString(),
+				SessionID: resolvedID,
+				Role:      "user",
+				Content:   &req.Message,
+			}
+			if err := d.DB.BatchInsertMessages(r.Context(), []store.Message{userMsg}); err != nil {
+				writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
+				return
+			}
 		// SSE headers must be set before the first Write.
 		flusher, ok := w.(http.Flusher)
 		if !ok {

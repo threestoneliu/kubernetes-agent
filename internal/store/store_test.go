@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -194,6 +195,85 @@ func TestMessage_ListEmpty(t *testing.T) {
 	got, err := db.ListMessagesBySession(context.Background(), "s1")
 	require.NoError(t, err)
 	require.Empty(t, got)
+}
+
+func TestMessage_ReasoningStoredAndListed(t *testing.T) {
+	db := openTestDB(t)
+	require.NoError(t, db.Migrate())
+	ctx := context.Background()
+	require.NoError(t, db.CreateSession(ctx, Session{ID: "s1", Title: "t"}))
+
+	reasoning := "Let me think step by step"
+	msg := Message{
+		ID:        "m1",
+		SessionID: "s1",
+		Role:      "assistant",
+		Content:   stringPtr("The answer is 42"),
+		Reasoning: &reasoning,
+	}
+	require.NoError(t, db.BatchInsertMessages(ctx, []Message{msg}))
+
+	got, err := db.ListMessagesBySession(ctx, "s1")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, "assistant", got[0].Role)
+	require.NotNil(t, got[0].Reasoning)
+	require.Equal(t, reasoning, *got[0].Reasoning)
+	require.Equal(t, "The answer is 42", *got[0].Content)
+}
+
+func TestMessage_ToolCallsJSONArray(t *testing.T) {
+	db := openTestDB(t)
+	require.NoError(t, db.Migrate())
+	ctx := context.Background()
+	require.NoError(t, db.CreateSession(ctx, Session{ID: "s1", Title: "t"}))
+
+	// Simulate how persistTurn now stores tool_calls: as a JSON array
+	toolCallsJSON := `[{"id":"tc1","name":"getPod","input":{"name":"api-abc"}}]`
+	msg := Message{
+		ID:        "m1",
+		SessionID: "s1",
+		Role:      "assistant",
+		Content:   stringPtr("Here is the result"),
+		ToolCalls: &toolCallsJSON,
+	}
+	require.NoError(t, db.BatchInsertMessages(ctx, []Message{msg}))
+
+	got, err := db.ListMessagesBySession(ctx, "s1")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.NotNil(t, got[0].ToolCalls)
+
+	// Verify it's valid JSON array (parseable)
+	var parsed []map[string]interface{}
+	err = json.Unmarshal([]byte(*got[0].ToolCalls), &parsed)
+	require.NoError(t, err, "tool_calls should be a valid JSON array")
+	require.Len(t, parsed, 1)
+	require.Equal(t, "tc1", parsed[0]["id"])
+}
+
+func TestMessage_ROWIDOrdering(t *testing.T) {
+	db := openTestDB(t)
+	require.NoError(t, db.Migrate())
+	ctx := context.Background()
+	require.NoError(t, db.CreateSession(ctx, Session{ID: "s1", Title: "t"}))
+
+	now := time.Now().Unix()
+	// Insert in logical order: user, assistant, tool
+	msgs := []Message{
+		{ID: "m1", SessionID: "s1", Role: "user", Content: stringPtr("deploy nginx"), CreatedAt: now},
+		{ID: "m2", SessionID: "s1", Role: "assistant", Content: stringPtr("I'll help"), CreatedAt: now + 1},
+		{ID: "m3", SessionID: "s1", Role: "tool", ToolCallID: stringPtr("tc1"), Content: stringPtr(`{"tool_call_id":"tc1","name":"k8sDeploy","output":"ok"}`), CreatedAt: now + 2},
+	}
+	require.NoError(t, db.BatchInsertMessages(ctx, msgs))
+
+	got, err := db.ListMessagesBySession(ctx, "s1")
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+	// Should be ordered by ROWID = insertion order
+	require.Equal(t, "user", got[0].Role)
+	require.Equal(t, "assistant", got[1].Role)
+	require.Equal(t, "tool", got[2].Role)
 }
 
 // --- plans repo tests ---

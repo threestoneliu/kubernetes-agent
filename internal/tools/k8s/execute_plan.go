@@ -86,6 +86,15 @@ func applyOne(ctx context.Context, f ClientFactory, op Operation) error {
 			return fmt.Errorf("apply requires manifest")
 		}
 		u := &unstructured.Unstructured{Object: *op.manifest}
+		// Same create-vs-update logic as dryRun in plan_write.go.
+		_, gerr := res.Get(ctx, u.GetName(), metav1.GetOptions{})
+		if gerr != nil && !isNotFound(gerr) {
+			return gerr
+		}
+		if isNotFound(gerr) {
+			_, err := res.Create(ctx, u, metav1.CreateOptions{})
+			return err
+		}
 		_, err := res.Patch(ctx, u.GetName(), "application/merge-patch+json", mustJSON(*op.manifest), metav1.PatchOptions{})
 		return err
 	case "delete":

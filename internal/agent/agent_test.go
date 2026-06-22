@@ -182,7 +182,7 @@ func TestRunner_TokenThenEnd(t *testing.T) {
 	assert.True(t, sawWorld, "missing second token")
 	assert.True(t, sawEnd, "missing message_end")
 
-	// One batched assistant message.
+	// One assistant message row per LLM streaming response (tokens merged).
 	assert.Equal(t, 1, store.callCount())
 	batch := store.lastBatch()
 	require.Len(t, batch, 1)
@@ -209,15 +209,22 @@ func TestRunner_ToolCallDispatch(t *testing.T) {
 			return []byte(`{"echoed":true}`), nil
 		},
 	}}
+	// Two Chat calls: first returns tool_call, second returns text.
 	r := &Runner{
-		Client: &fakeClient{script: [][]llm.Event{{
-			{Type: llm.EventToolCall, Call: llm.ToolCall{
-				ID:    "tc1",
-				Name:  "echo",
-				Input: json.RawMessage(`{"msg":"hi"}`),
-			}},
-			{Type: llm.EventMessageEnd, In: 1, Out: 1},
-		}}},
+		Client: &fakeClient{script: [][]llm.Event{
+			{
+				{Type: llm.EventToolCall, Call: llm.ToolCall{
+					ID:    "tc1",
+					Name:  "echo",
+					Input: json.RawMessage(`{"msg":"hi"}`),
+				}},
+				{Type: llm.EventMessageEnd, In: 1, Out: 1},
+			},
+			{
+				{Type: llm.EventToken, Text: "done"},
+				{Type: llm.EventMessageEnd, In: 1, Out: 1},
+			},
+		}},
 		Tools:   tools,
 		Store:   store,
 		Events:  events,
@@ -230,7 +237,7 @@ func TestRunner_ToolCallDispatch(t *testing.T) {
 
 	assert.Equal(t, int32(1), toolCalls.Load(), "handler should be invoked once")
 
-	var sawCall, sawResult, sawEnd bool
+	var sawCall, sawResult bool
 	for _, e := range evs {
 		switch e.Type {
 		case EventToolCall:
@@ -244,28 +251,25 @@ func TestRunner_ToolCallDispatch(t *testing.T) {
 			_ = json.Unmarshal(e.Payload, &p)
 			assert.Equal(t, "tc1", p.ID)
 			assert.Empty(t, p.Error)
-			// Output should be a JSON object with echoed:true
 			var m map[string]any
 			require.NoError(t, json.Unmarshal(p.Output, &m))
 			assert.Equal(t, true, m["echoed"])
 			sawResult = true
-		case EventMessageEnd:
-			sawEnd = true
 		}
 	}
 	assert.True(t, sawCall)
 	assert.True(t, sawResult)
-	assert.True(t, sawEnd)
 
-	// Persisted: one assistant message (with tool_calls), one tool result row.
-	batch := store.lastBatch()
-	require.Len(t, batch, 2)
-	assert.Equal(t, "assistant", batch[0].Role)
-	require.NotNil(t, batch[0].ToolCalls)
-	assert.Contains(t, *batch[0].ToolCalls, `"echo"`)
-	assert.Equal(t, "tool", batch[1].Role)
-	require.NotNil(t, batch[1].ToolCallID)
-	assert.Equal(t, "tc1", *batch[1].ToolCallID)
+	// Two batches: first = tool call turn, second = text turn.
+	assert.Equal(t, 2, store.callCount())
+	firstBatch := store.batches[0]
+	require.Len(t, firstBatch, 2, "first turn: assistant(tool_call) + tool_result")
+	assert.Equal(t, "assistant", firstBatch[0].Role)
+	require.NotNil(t, firstBatch[0].ToolCalls)
+	assert.Contains(t, *firstBatch[0].ToolCalls, `"echo"`)
+	assert.Equal(t, "tool", firstBatch[1].Role)
+	require.NotNil(t, firstBatch[1].ToolCallID)
+	assert.Equal(t, "tc1", *firstBatch[1].ToolCallID)
 }
 
 // --- plan_awaiting_confirm blocks ---
