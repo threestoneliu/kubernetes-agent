@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -12,8 +13,10 @@ import (
 
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/skills"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
-	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
+	"github.com/threestoneliu/kubernetes-agent/internal/tools/agent"
+	k8s "github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
 
 // stubFactory hands out a no-op dynamic interface. The k8s tool
@@ -41,8 +44,9 @@ func TestAllToolNames(t *testing.T) {
 }
 
 func TestRegisterK8sTools_HandlerCount(t *testing.T) {
+	// 6 k8s tools + fs_read + load_skill
 	tools := RegisterK8sTools(&ToolDeps{})
-	assert.Len(t, tools, 6)
+	assert.Len(t, tools, 8)
 	for _, tool := range tools {
 		assert.NotEmpty(t, tool.Name)
 		assert.NotEmpty(t, tool.Description)
@@ -225,3 +229,83 @@ func newAgentTestStore(t *testing.T) *store.DB {
 
 // _ keeps imports used.
 var _ = k8s.Operation{}
+func TestLoadSkillHandler_ReturnsContent(t *testing.T) {
+	// Create a real SkillEntry by reading the actual SKILL.md from disk.
+	tmpDir := t.TempDir()
+	skillDir := tmpDir + "/k8s-debug-pod"
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: k8s-debug-pod\ndescription: Debug a pod\n---\n\n# k8s-debug-pod\n\n## Workflow\n1. Check pod status"
+	if err := os.WriteFile(skillDir+"/SKILL.md", []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	loader := skills.NewLoader(tmpDir)
+	entries, err := loader.LoadAll()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+
+	tools := RegisterK8sTools(&ToolDeps{Skills: entries})
+	load := findTool(t, tools, "load_skill")
+	out, err := load.Handler(context.Background(), llm.ToolCall{
+		Input: []byte(`{"name":"k8s-debug-pod"}`),
+	})
+	require.NoError(t, err)
+	var got agent.LoadSkillOutput
+	require.NoError(t, json.Unmarshal(out, &got))
+	assert.Equal(t, "k8s-debug-pod", got.Name)
+	assert.Equal(t, "Debug a pod", got.Description)
+	assert.Contains(t, got.Content, "## Workflow")
+	assert.Empty(t, got.Error)
+}
+
+func TestLoadSkillHandler_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	loader := skills.NewLoader(tmpDir)
+	entries, err := loader.LoadAll()
+	require.NoError(t, err)
+	// empty skill set — add one skill entry
+	skillDir := tmpDir + "/k8s-debug-pod"
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillDir+"/SKILL.md", []byte("---\nname: k8s-debug-pod\ndescription: Debug a pod\n---\n\n# k8s-debug-pod\n\n## Workflow\n1. Check pod status"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = loader.LoadAll()
+	require.NoError(t, err)
+
+	tools := RegisterK8sTools(&ToolDeps{Skills: entries})
+	load := findTool(t, tools, "load_skill")
+	out, err := load.Handler(context.Background(), llm.ToolCall{
+		Input: []byte(`{"name":"nope"}`),
+	})
+	require.NoError(t, err)
+	var got agent.LoadSkillOutput
+	require.NoError(t, json.Unmarshal(out, &got))
+	assert.Contains(t, got.Error, "not found")
+}
+
+func TestLoadSkillHandler_EmptyName(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := tmpDir + "/k8s-debug-pod"
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillDir+"/SKILL.md", []byte("---\nname: k8s-debug-pod\ndescription: Debug a pod\n---\n\n# k8s-debug-pod\n\n## Workflow\n1. Check pod status"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	loader := skills.NewLoader(tmpDir)
+	entries, err := loader.LoadAll()
+	require.NoError(t, err)
+
+	tools := RegisterK8sTools(&ToolDeps{Skills: entries})
+	load := findTool(t, tools, "load_skill")
+	out, err := load.Handler(context.Background(), llm.ToolCall{
+		Input: []byte(`{"name":""}`),
+	})
+	require.NoError(t, err)
+	var got agent.LoadSkillOutput
+	require.NoError(t, json.Unmarshal(out, &got))
+	assert.Contains(t, got.Error, "name is required")
+}

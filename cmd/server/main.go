@@ -100,14 +100,23 @@ func buildDeps(cfg *config.Config, db *store.DB, aead *crypto.AEAD) server.Deps 
 	// Load skills
 	var skillPromptBuilder *skills.PromptBuilder
 	var fsReadAllowedDir string
+	var skillEntries []*skills.SkillEntry
 	if cfg.Skills.Enabled {
 		skillLoader := skills.NewLoader(cfg.Skills.Dir)
-		skillEntries, _ := skillLoader.LoadAll() // fail-safe
+		loaded, err := skillLoader.LoadAll()
+		if err != nil {
+			slog.Warn("skills: failed to load", "dir", cfg.Skills.Dir, "err", err)
+		} else {
+			slog.Info("skills: loaded", "count", len(loaded), "dir", cfg.Skills.Dir)
+		}
+		skillEntries = loaded
 		skillPromptBuilder = skills.NewPromptBuilder(skillEntries)
 		fsReadAllowedDir = cfg.Skills.Dir
+	} else {
+		slog.Info("skills: disabled by config")
 	}
 
-	rf := newRunnerFactory(registry, db, factory, engine, cfg.LLM.Default, skillPromptBuilder, fsReadAllowedDir)
+	rf := newRunnerFactory(registry, db, factory, engine, cfg.LLM.Default, skillPromptBuilder, fsReadAllowedDir, skillEntries)
 	return server.Deps{
 		DB:            db,
 		AEAD:          aead,
@@ -172,9 +181,10 @@ type runnerFactory struct {
 	engine            *policy.Engine
 	skillPromptBuilder *skills.PromptBuilder
 	fsReadAllowedDir  string
+	skillEntries      []*skills.SkillEntry
 }
 
-func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory, engine *policy.Engine, defaultName string, skillPromptBuilder *skills.PromptBuilder, fsReadAllowedDir string) *runnerFactory {
+func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory, engine *policy.Engine, defaultName string, skillPromptBuilder *skills.PromptBuilder, fsReadAllowedDir string, skillEntries []*skills.SkillEntry) *runnerFactory {
 	cli := pickDefaultClient(reg, defaultName)
 	return &runnerFactory{
 		registry:           reg,
@@ -185,6 +195,7 @@ func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory
 		engine:            engine,
 		skillPromptBuilder: skillPromptBuilder,
 		fsReadAllowedDir:  fsReadAllowedDir,
+		skillEntries:      skillEntries,
 	}
 }
 
@@ -204,8 +215,9 @@ func (rf *runnerFactory) NewRunner(sessionID, clusterID string) *agent.Runner {
 	if rf.skillPromptBuilder != nil {
 		skillsPrompt = rf.skillPromptBuilder.FormatSkillsForPrompt()
 	}
+	slog.Debug("runner: creating", "fs_read_allowed_dir", rf.fsReadAllowedDir, "skill_count", len(rf.skillEntries))
 	r := &agent.Runner{Client: cli, Store: rf.db, SkillsPrompt: skillsPrompt}
-	r.Deps = agent.ToolDeps{Factory: rf.factory, Engine: rf.engine, Store: rf.db, FSReadAllowedDir: rf.fsReadAllowedDir}
+	r.Deps = agent.ToolDeps{Factory: rf.factory, Engine: rf.engine, Store: rf.db, FSReadAllowedDir: rf.fsReadAllowedDir, Skills: rf.skillEntries}
 	r.Tools = agent.RegisterK8sTools(&r.Deps)
 	return r
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -117,6 +118,16 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 	}
 	// Current user turn goes last.
 	msgs = append(msgs, transcriptMessage{Role: llm.RoleUser, Parts: []llm.ContentPart{{Type: "text", Text: userMessage}}})
+
+	// Debug: log the system prompt with available skills
+	if r.SkillsPrompt != "" {
+		slog.Debug("agent: system prompt with skills",
+			"session_id", r.Session.ID,
+			"system_prompt_length", len(r.systemPrompt()),
+			"skills_prompt_length", len(r.SkillsPrompt),
+			"history_messages", len(msgs)-2, // exclude system and current user
+			"skills_prompt", r.SkillsPrompt)
+	}
 
 	maxRetries := r.MaxRetries
 	if maxRetries < 0 {
@@ -313,14 +324,17 @@ func (r *Runner) emitError(code, msg string, retryable bool) error {
 }
 
 // systemPrompt returns the configured system prompt or the package
-// default, plus any injected skills prompt.
+// default, plus any injected skills prompt. Skills prompt is placed
+// FIRST so it has higher attention weight — the LLM is more likely
+// to follow the "load skill before acting" rule when it appears at
+// the top of the system message.
 func (r *Runner) systemPrompt() string {
 	base := r.SystemPrompt
 	if base == "" {
 		base = llm.SystemPrompt
 	}
 	if r.SkillsPrompt != "" {
-		return base + "\n" + r.SkillsPrompt
+		return r.SkillsPrompt + "\n\n" + base
 	}
 	return base
 }

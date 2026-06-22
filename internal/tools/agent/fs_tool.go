@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-// FSReadTool handles reading files from the filesystem.
+// FSReadTool handles reading files from the filesystem, restricted to
+// a specific directory tree. Used by the agent loop to give the LLM
+// read access to files (e.g. skill content) without unrestricted
+// filesystem access.
 type FSReadTool struct {
 	allowedDir string // e.g. ~/.kubernetes-agent
 }
@@ -25,7 +28,8 @@ type fsReadError struct {
 	Error string `json:"error"`
 }
 
-// NewFSReadTool creates a new fs_read tool that restricts access to allowedDir.
+// NewFSReadTool creates a new fs_read tool that restricts access to
+// files under allowedDir.
 func NewFSReadTool(allowedDir string) *FSReadTool {
 	return &FSReadTool{allowedDir: allowedDir}
 }
@@ -104,12 +108,12 @@ func (t *FSReadTool) Handle(ctx context.Context, call interface{}) ([]byte, erro
 }
 
 // fsReadSchema defines the input schema for the fs_read tool.
-var fsReadSchema = map[string]any{
+var FSReadSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"path": map[string]any{
 			"type":        "string",
-			"description": "Path to file to read, relative to ~/.kubernetes-agent/",
+			"description": "Absolute path to the file to read, or a path beginning with ~/. The path must be inside ~/.kubernetes-agent/.",
 		},
 	},
 	"required": []string{"path"},

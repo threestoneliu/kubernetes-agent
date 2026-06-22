@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/skills"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
-	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
+	"github.com/threestoneliu/kubernetes-agent/internal/tools/agent"
+	k8s "github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
 
 // ToolDeps bundles everything a k8s tool handler needs: the dynamic
@@ -24,6 +27,7 @@ type ToolDeps struct {
 	Store            *store.DB
 	Session          *Session
 	FSReadAllowedDir string // Directory for fs_read tool to restrict access
+	Skills           []*skills.SkillEntry // Loaded skills for load_skill tool
 	// Emit is called by handlers that need to surface side-channel
 	// events before returning their tool output. In particular,
 	// plan_write emits PlanReady + PlanAwaitingConfirm via Emit
@@ -261,12 +265,32 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 		{
 			Name:        "fs_read",
 			Description: "Read a file from the local filesystem. Access is restricted to ~/.kubernetes-agent/ directory.",
-			InputSchema: fsReadSchema,
+			InputSchema: agent.FSReadSchema,
 			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
 				if d.FSReadAllowedDir == "" {
-					return json.Marshal(fsReadError{Error: "fs_read not configured"})
+					slog.Warn("fs_read: not configured (FSReadAllowedDir is empty)")
+					return json.Marshal(map[string]string{"error": "fs_read not configured"})
 				}
-				tool := NewFSReadTool(d.FSReadAllowedDir)
+				slog.Debug("fs_read: called", "allowed_dir", d.FSReadAllowedDir, "input", string(call.Input))
+				tool := agent.NewFSReadTool(d.FSReadAllowedDir)
+				return tool.Handle(ctx, call.Input)
+			},
+		},
+		// load_skill tool - loads a SKILL.md by name and returns its content.
+		// The LLM calls this when its task matches a skill description.
+		// Unlike fs_read, this is a name-based API so the LLM never has
+		// to construct a file path.
+		{
+			Name:        "load_skill",
+			Description: "Load a SKILL.md file by its name. Use this when the user's task matches a skill description from the system prompt. Pass the skill name exactly as it appears in the <name> tag (e.g. \"k8s-debug-pod\"). Returns the skill's workflow instructions.",
+			InputSchema: agent.LoadSkillSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				if d.Skills == nil {
+					slog.Warn("load_skill: not configured (Skills is nil)")
+					return json.Marshal(map[string]string{"error": "load_skill not configured"})
+				}
+				slog.Debug("load_skill: called", "input", string(call.Input))
+				tool := agent.NewSkillTool(d.Skills)
 				return tool.Handle(ctx, call.Input)
 			},
 		},
@@ -440,3 +464,4 @@ func AllToolNames() []string {
 		"k8s_plan_write", "k8s_execute_plan", "k8s_ask_user",
 	}
 }
+

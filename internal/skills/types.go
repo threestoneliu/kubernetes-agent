@@ -19,6 +19,13 @@ type SkillEntry struct {
 	Metadata    *SkillMetadata
 }
 
+// Content returns the raw SKILL.md body content (the markdown
+// after the frontmatter). The LLM receives this when it calls
+// load_skill.
+func (e *SkillEntry) Content() string {
+	return e.Skill.content
+}
+
 // SkillMetadata contains optional skill metadata.
 type SkillMetadata struct {
 	Emoji    string

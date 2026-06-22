@@ -50,17 +50,19 @@ func TestNewOpenAICompatClient_MissingModel(t *testing.T) {
 	assert.Contains(t, err.Error(), "model")
 }
 
-func TestToFantasyPrompt_SkipsSystemAndEmpty(t *testing.T) {
+func TestToFantasyPrompt_KeepsSystemInPrompt(t *testing.T) {
 	msgs := []Message{
 		{Role: RoleSystem, Content: []ContentPart{{Type: "text", Text: "sys"}}},
 		{Role: RoleUser, Content: []ContentPart{{Type: "text", Text: "hi"}}},
-		{Role: RoleAssistant, Content: nil},
 	}
 	prompt, system, err := toFantasyPrompt(msgs)
 	require.NoError(t, err)
 	assert.Equal(t, "sys", system)
-	// System is dropped (returned separately); user and assistant stay.
+	// System is KEPT in the prompt as a system-role message (fantasy
+	// extracts it into the provider's system param).
 	require.Len(t, prompt, 2)
+	assert.Equal(t, fantasy.MessageRoleSystem, prompt[0].Role)
+	assert.Equal(t, fantasy.MessageRoleUser, prompt[1].Role)
 }
 
 func TestToFantasyPrompt_ConcatsSystem(t *testing.T) {

@@ -39,22 +39,52 @@ func (s *fakeStream) Close() error { return nil }
 
 // fakeClient is an llm.Client that returns a pre-scripted sequence of
 // events. Multiple Chat calls each return a fresh stream that drains
-// the same script.
+// the same script. It also records the messages and tools it was
+// called with, so tests can assert on the actual LLM input.
 type fakeClient struct {
-	mu     sync.Mutex
-	script [][]llm.Event
-	calls  int
+	mu          sync.Mutex
+	script      [][]llm.Event
+	calls       int
+	capturedMsgs [][]llm.Message
+	capturedTools [][]llm.Tool
 }
 
 func (c *fakeClient) Chat(ctx context.Context, messages []llm.Message, tools []llm.Tool) (llm.Stream, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Copy messages and tools so concurrent goroutines can't mutate.
+	msgCopy := make([]llm.Message, len(messages))
+	copy(msgCopy, messages)
+	toolCopy := make([]llm.Tool, len(tools))
+	copy(toolCopy, tools)
+	c.capturedMsgs = append(c.capturedMsgs, msgCopy)
+	c.capturedTools = append(c.capturedTools, toolCopy)
 	if c.calls >= len(c.script) {
 		return &fakeStream{}, nil
 	}
 	events := c.script[c.calls]
 	c.calls++
 	return &fakeStream{events: events}, nil
+}
+
+// firstSystemText returns the text of the first system message seen
+// in the first Chat call, or "" if none.
+func (c *fakeClient) firstSystemText() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.capturedMsgs) == 0 {
+		return ""
+	}
+	for _, m := range c.capturedMsgs[0] {
+		if m.Role == llm.RoleSystem {
+			for _, p := range m.Content {
+				if p.Type == "text" {
+					return p.Text
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // fakeStore records every BatchInsertMessages call. It does not
@@ -593,4 +623,50 @@ func TestRunner_TruncationDropsOldest(t *testing.T) {
 	done := startRunner(r, "hi")
 	finish := collectEvents(events, done)
 	_, _ = finish()
+}
+
+// TestRunner_SystemPromptIncludesSkills verifies that when
+// SkillsPrompt is set, it appears in the system message that gets
+// sent to the LLM. This is the regression test for the bug where
+// toFantasyPrompt dropped system messages, causing skills to be
+// invisible to the LLM.
+func TestRunner_SystemPromptIncludesSkills(t *testing.T) {
+	store := &fakeStore{}
+	events := make(chan Event, 16)
+	sess := NewSession("s1")
+
+	skillsPrompt := `## Skills (mandatory)
+Before replying: scan <available_skills> entries.
+
+<available_skills>
+  <skill>
+    <name>k8s-debug-pod</name>
+    <description>Debug a pod issue</description>
+  </skill>
+</available_skills>`
+
+	client := &fakeClient{script: [][]llm.Event{{
+		{Type: llm.EventToken, Text: "ok"},
+		{Type: llm.EventMessageEnd, In: 100, Out: 5},
+	}}}
+
+	r := &Runner{
+		Client:       client,
+		Tools:        nil,
+		Store:        store,
+		Events:       events,
+		Session:      sess,
+		SkillsPrompt: skillsPrompt,
+	}
+	done := startRunner(r, "用户问: pod 启动失败了")
+	finish := collectEvents(events, done)
+	_, runErr := finish()
+	require.NoError(t, runErr)
+
+	// Verify the LLM actually received the system prompt.
+	sysText := client.firstSystemText()
+	require.NotEmpty(t, sysText, "LLM never received a system message — skills would be invisible")
+	assert.Contains(t, sysText, "Skills (mandatory)", "system prompt should include the skills header")
+	assert.Contains(t, sysText, "k8s-debug-pod", "system prompt should include the skill name")
+	assert.Contains(t, sysText, "<available_skills>", "system prompt should include the available_skills XML")
 }
