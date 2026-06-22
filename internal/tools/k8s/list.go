@@ -103,15 +103,62 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 	for i, c := range table.ColumnDefinitions {
 		cols[i] = c.Name
 	}
+
+	// Some API servers (e.g. Docker Desktop, kind) don't include a
+	// Namespace column in the Table for cluster-level listings of
+	// namespaced resources (/api/v1/pods). The namespace is still
+	// present in each row's Object, so we inject the column.
+	nsIdx := -1
+	for i, col := range cols {
+		if col == "Namespace" {
+			nsIdx = i
+			break
+		}
+	}
+	injectNS := nsIdx == -1 && resolver.IsNamespaced(in.Resource)
+
+	if injectNS {
+		nsIdx = len(cols)
+		cols = append(cols, "Namespace")
+	}
+
 	rows := make([][]string, 0, len(table.Rows))
 	for _, r := range table.Rows {
 		cells := make([]string, len(table.ColumnDefinitions))
 		for i, c := range r.Cells {
 			cells[i] = fmt.Sprintf("%v", c)
 		}
+		if injectNS {
+			ns := extractNamespace(r.Object)
+			cells = append(cells, ns)
+		}
 		rows = append(rows, cells)
 	}
 	return &TableOutput{Columns: cols, Rows: rows}, nil
+}
+
+// extractNamespace reads the namespace from a TableRow.Object runtime.Object.
+// The Object contains the full resource with its metadata.namespace field.
+func extractNamespace(obj any) string {
+	if obj == nil {
+		return ""
+	}
+	// The Object can be a map[string]any (from JSON unmarshal) or a
+	// typed runtime object. Try JSON round-trip which works for both.
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return ""
+	}
+	meta, ok := m["metadata"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	ns, _ := meta["namespace"].(string)
+	return ns
 }
 
 // buildListURL constructs the correct API path for a resource.
