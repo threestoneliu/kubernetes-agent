@@ -80,6 +80,18 @@ func (s *Session) CancelPlan() {
 	close(s.ResumePlan)
 }
 
+// ResetPlan resets the session so a new plan can be awaited.
+// Creates fresh ResumePlan channel and clears PlanResult.
+// Called by k8s_plan_write handler before WaitPlan to handle the
+// case where a previous plan was cancelled.
+func (s *Session) ResetPlan() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// If channel is already closed, create a new one
+	s.ResumePlan = make(chan struct{})
+	s.PlanResult = ""
+}
+
 // AnswerAsk stores the user's answer and unblocks the agent loop.
 // The answer is set under the mutex before ResumeAsk is closed, so
 // the agent loop can safely read AskAnswer after WaitAsk returns

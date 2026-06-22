@@ -173,10 +173,11 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 					d.Emit(ev)
 				}
 				if d.Session != nil {
-					if err := d.Session.WaitPlan(ctx); err != nil {
-						return nil, fmt.Errorf("plan %s: %w", out.PlanID, err)
+						d.Session.ResetPlan() // clear stale cancelled/confirmed state
+						if err := d.Session.WaitPlan(ctx); err != nil {
+							return nil, fmt.Errorf("plan %s: %w", out.PlanID, err)
+						}
 					}
-				}
 				return json.Marshal(map[string]any{
 					"plan_id":  out.PlanID,
 					"decision": d.planDecision(),

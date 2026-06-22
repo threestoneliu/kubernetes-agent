@@ -3,94 +3,167 @@ import { RiskBadge } from './RiskBadge'
 import { Markdown } from './Markdown'
 
 interface DiffItem {
-  verb?: string
-  resource?: string
-  namespace?: string
-  name?: string
-  kind?: string
+  action: string
+  resource: string
+  name: string
+  namespace: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  risk?: string
   [key: string]: unknown
 }
 
-function DiffCard({ diff }: { diff: DiffItem }) {
-  const action = diff.verb?.toUpperCase() ?? 'UPDATE'
-  const kind = diff.kind ?? diff.resource ?? 'Unknown'
-  const name = diff.name ?? 'unknown'
-  const ns = diff.namespace ?? 'default'
+// Extract a human-readable kind from a manifest (after or before).
+function getKind(after?: Record<string, unknown>, before?: Record<string, unknown>): string {
+  const from = after ?? before ?? {}
+  return (from.kind as string) ?? from.resource ?? 'Unknown'
+}
 
-  // Extract key changes from the diff for summary
-  const changes: string[] = []
-  for (const [key, val] of Object.entries(diff)) {
-    if (['verb', 'resource', 'namespace', 'name', 'kind', 'cluster_id'].includes(key)) continue
-    if (val !== undefined && val !== null) {
-      changes.push(`${key}: ${JSON.stringify(val)}`)
-    }
-  }
-  const summary = changes.length > 0 ? changes.slice(0, 3).join(', ') : null
+// Build a YAML string from a manifest for collapsible display.
+function toYAML(obj: Record<string, unknown>): string {
+  // Use a simple YAML-ish serialization — just show the top-level
+  // fields that are most relevant for a K8s resource.
+  const lines: string[] = []
+  const skip = new Set(['creationTimestamp', 'generation', 'managedFields', 'ownerReferences', 'resourceVersion', 'uid', 'status'])
 
-  // Build YAML preview from the diff item itself
-  const yamlLines: string[] = []
-  if (diff.kind || diff.resource) {
-    yamlLines.push(`kind: ${diff.kind ?? diff.resource}`)
-  }
-  if (diff.name) {
-    yamlLines.push(`metadata:`)
-    yamlLines.push(`  name: ${diff.name}`)
-    if (diff.namespace && diff.namespace !== 'default') {
-      yamlLines.push(`  namespace: ${diff.namespace}`)
+  function walk(o: unknown, indent: number): void {
+    if (o === null || o === undefined) return
+    if (typeof o !== 'object') {
+      lines.push(' '.repeat(indent) + JSON.stringify(o))
+      return
     }
-  }
-  for (const [key, val] of Object.entries(diff)) {
-    if (['verb', 'resource', 'namespace', 'name', 'kind', 'cluster_id'].includes(key)) continue
-    if (val !== undefined && val !== null) {
-      if (typeof val === 'object') {
-        yamlLines.push(`${key}:`)
-        for (const [k2, v2] of Object.entries(val as Record<string, unknown>)) {
-          yamlLines.push(`  ${k2}: ${JSON.stringify(v2)}`)
-        }
+    if (Array.isArray(o)) {
+      for (const item of o) {
+        lines.push(' '.repeat(indent) + '-')
+        walk(item, indent + 2)
+      }
+      return
+    }
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+      if (skip.has(k)) continue
+      if (typeof v === 'object' && v !== null) {
+        lines.push(' '.repeat(indent) + k + ':')
+        walk(v, indent + 2)
       } else {
-        yamlLines.push(`${key}: ${JSON.stringify(val)}`)
+        lines.push(' '.repeat(indent) + k + ': ' + JSON.stringify(v))
       }
     }
   }
 
-  const actionColor = action === 'CREATE' ? 'green' : action === 'DELETE' ? 'red' : 'blue'
+  walk(obj, 0)
+  return lines.join('\n')
+}
+
+// Extract a short summary of what changed between before and after.
+function summarizeChange(before?: Record<string, unknown>, after?: Record<string, unknown>): string | null {
+  if (!before && !after) return null
+  const parts: string[] = []
+
+  // Replicas
+  const beforeReplicas = before?.spec as Record<string, unknown> | undefined
+  const afterReplicas = after?.spec as Record<string, unknown> | undefined
+  if (beforeReplicas?.replicas !== undefined || afterReplicas?.replicas !== undefined) {
+    parts.push(`replicas: ${beforeReplicas?.replicas ?? '?'} → ${afterReplicas?.replicas ?? '?'}`)
+  }
+
+  // Image
+  const beforeContainers = (before?.spec as Record<string, unknown>)?.template as Record<string, unknown>
+  const afterContainers = (after?.spec as Record<string, unknown>)?.template as Record<string, unknown>
+  const beforeImg = (beforeContainers?.spec as Record<string, unknown>)?.containers as Array<Record<string, unknown>> | undefined
+  const afterImg = (afterContainers?.spec as Record<string, unknown>)?.containers as Array<Record<string, unknown>> | undefined
+  const bImg = beforeImg?.[0]?.image as string | undefined
+  const aImg = afterImg?.[0]?.image as string | undefined
+  if (bImg !== undefined || aImg !== undefined) {
+    parts.push(`image: ${bImg ?? '?'} → ${aImg ?? '?'}`)
+  }
+
+  // Labels
+  const bLabels = before?.metadata as Record<string, unknown>
+  const aLabels = after?.metadata as Record<string, unknown>
+  if (JSON.stringify(bLabels?.labels) !== JSON.stringify(aLabels?.labels)) {
+    parts.push('labels changed')
+  }
+
+  // Ports
+  const bPorts = beforeImg?.[0]?.ports as Array<Record<string, unknown>> | undefined
+  const aPorts = afterImg?.[0]?.ports as Array<Record<string, unknown>> | undefined
+  if (JSON.stringify(bPorts) !== JSON.stringify(aPorts)) {
+    parts.push('ports changed')
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : null
+}
+
+function DiffCard({ diff }: { diff: DiffItem }) {
+  const action = diff.action?.toUpperCase() ?? 'APPLY'
+  const kind = getKind(diff.after, diff.before)
+  const name = diff.name ?? 'unknown'
+  const ns = diff.namespace ?? 'default'
+  const summary = summarizeChange(diff.before, diff.after)
+
+  const yaml = diff.after ? toYAML(diff.after) : diff.before ? toYAML(diff.before) : ''
+
+  const actionColor: Record<string, string> = {
+    CREATE: '#22c55e',
+    APPLY: '#3b82f6',
+    UPDATE: '#3b82f6',
+    DELETE: '#ef4444',
+    SCALE: '#f59e0b',
+  }
+  const color = actionColor[action] ?? '#6b7280'
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px', marginBottom: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: summary ? 4 : 0 }}>
         <span style={{
-          color: actionColor,
+          color,
           fontWeight: 600,
-          fontSize: 12,
-          background: actionColor + '20',
+          fontSize: 11,
+          background: color + '20',
           padding: '2px 6px',
           borderRadius: 4,
+          letterSpacing: '0.02em',
         }}>
           {action}
         </span>
-        <span style={{ fontWeight: 500 }}>{kind}</span>
+        <span style={{ fontWeight: 600 }}>{kind}</span>
         <span className="muted">/</span>
         <span>{ns}/{name}</span>
       </div>
       {summary && (
-        <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
+        <div style={{
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+          marginBottom: yaml ? 6 : 0,
+          fontFamily: 'monospace',
+          background: 'var(--bg-secondary)',
+          padding: '4px 8px',
+          borderRadius: 4,
+        }}>
           {summary}
         </div>
       )}
-      {yamlLines.length > 0 && (
+      {yaml && (
         <details>
-          <summary style={{ cursor: 'pointer', fontSize: 13, color: 'var(--accent)' }}>
-            查看 YAML
+          <summary style={{
+            cursor: 'pointer',
+            fontSize: 12,
+            color: 'var(--accent)',
+            userSelect: 'none',
+          }}>
+            查看完整 YAML
           </summary>
           <pre style={{
             background: 'var(--bg-secondary)',
             padding: 8,
             borderRadius: 4,
-            fontSize: 12,
+            fontSize: 11,
             overflow: 'auto',
             marginTop: 6,
+            maxHeight: 300,
+            fontFamily: 'monospace',
           }}>
-            {yamlLines.join('\n')}
+            {yaml}
           </pre>
         </details>
       )}
@@ -124,7 +197,7 @@ export function PlanModal({
           <div style={{ marginTop: 12 }}>
             <div style={{ fontWeight: 500, marginBottom: 8 }}>{plan.diffs.length} 个变更</div>
             {plan.diffs.map((diff, i) => (
-              <DiffCard key={i} diff={diff as DiffItem} />
+              <DiffCard key={i} diff={diff as unknown as DiffItem} />
             ))}
           </div>
         )}

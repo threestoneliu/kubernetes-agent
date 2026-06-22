@@ -109,9 +109,9 @@ func TestRiskFrom(t *testing.T) {
 }
 
 func TestSummarize(t *testing.T) {
-	assert.Equal(t, "3 个操作待确认", summarize([]Diff{{}, {}, {}}, nil))
-	assert.Equal(t, "全部 2 个操作被 policy 拒绝", summarize(nil, []DeniedOp{{}, {}}))
-	assert.Equal(t, "1 个操作待确认,1 个被 policy 拒绝", summarize([]Diff{{}}, []DeniedOp{{}}))
+	assert.Equal(t, "创建 Unknown default/(unnamed); 创建 Unknown default/(unnamed); 创建 Unknown default/(unnamed)", summarize([]Diff{{Action: "apply", Resource: ""}, {Action: "apply", Resource: ""}, {Action: "apply", Resource: ""}}, nil))
+	assert.Equal(t, "全部 2 个被 policy 拒绝", summarize(nil, []DeniedOp{{}, {}}))
+	assert.Equal(t, "创建 Unknown default/(unnamed); 全部 1 个被 policy 拒绝", summarize([]Diff{{Action: "apply"}}, []DeniedOp{{}}))
 }
 
 func TestDiagnoseStatus_ImagePullBackOff(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -149,11 +150,152 @@ func riskFrom(eff policy.Effect) string {
 }
 
 func summarize(diffs []Diff, denied []DeniedOp) string {
-	if len(diffs) == 0 && len(denied) > 0 {
-		return fmt.Sprintf("全部 %d 个操作被 policy 拒绝", len(denied))
+	var parts []string
+	for _, d := range diffs {
+		parts = append(parts, summarizeOne(d))
 	}
-	if len(diffs) > 0 && len(denied) > 0 {
-		return fmt.Sprintf("%d 个操作待确认,%d 个被 policy 拒绝", len(diffs), len(denied))
+	if len(denied) > 0 {
+		parts = append(parts, fmt.Sprintf("全部 %d 个被 policy 拒绝", len(denied)))
 	}
-	return fmt.Sprintf("%d 个操作待确认", len(diffs))
+	if len(parts) == 0 {
+		return "无操作"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func summarizeOne(d Diff) string {
+	ns := d.Namespace
+	if ns == "" {
+		ns = "default"
+	}
+	kind := getManifestKind(d.After, d.Before)
+	name := d.Name
+	if name == "" {
+		name = "(unnamed)"
+	}
+
+	switch d.Action {
+	case "delete":
+		return fmt.Sprintf("删除 %s %s/%s", kind, ns, name)
+	case "scale":
+		beforeRep := extractReplicas(d.Before)
+		afterRep := extractReplicas(d.After)
+		return fmt.Sprintf("调整 %s %s/%s replicas: %s → %s", kind, ns, name, beforeRep, afterRep)
+	default: // apply / create
+		if d.Before == nil {
+			return fmt.Sprintf("创建 %s %s/%s", kind, ns, name)
+		}
+		// Show what changed
+		changes := diffChanges(d.Before, d.After)
+		if changes == "" {
+			return fmt.Sprintf("更新 %s %s/%s (无变更)", kind, ns, name)
+		}
+		return fmt.Sprintf("更新 %s %s/%s: %s", kind, ns, name, changes)
+	}
+}
+
+func getManifestKind(after, before map[string]any) string {
+	for _, m := range []map[string]any{after, before} {
+		if m == nil {
+			continue
+		}
+		if kind, _ := m["kind"].(string); kind != "" {
+			return kind
+		}
+	}
+	return "Unknown"
+}
+
+func extractReplicas(m map[string]any) string {
+	if m == nil {
+		return "?"
+	}
+	spec, _ := m["spec"].(map[string]any)
+	if spec == nil {
+		return "?"
+	}
+	if r, ok := spec["replicas"].(int64); ok {
+		return fmt.Sprintf("%d", r)
+	}
+	if r, ok := spec["replicas"].(float64); ok {
+		return fmt.Sprintf("%.0f", r)
+	}
+	return "?"
+}
+
+func diffChanges(before, after map[string]any) string {
+	var changes []string
+	for _, key := range []string{"replicas", "image", "imagePullPolicy", "ports", "serviceType"} {
+		bv := getNested(before, key)
+		av := getNested(after, key)
+		if fmt.Sprintf("%v", bv) != fmt.Sprintf("%v", av) {
+			changes = append(changes, fmt.Sprintf("%s: %v → %v", key, bv, av))
+		}
+	}
+	// Labels
+	bl := getNestedLabels(before)
+	al := getNestedLabels(after)
+	if !labelMapsEqual(bl, al) {
+		changes = append(changes, "labels changed")
+	}
+	if len(changes) == 0 {
+		return ""
+	}
+	if len(changes) > 2 {
+		return strings.Join(changes[:2], ", ") + "…"
+	}
+	return strings.Join(changes, ", ")
+}
+
+func getNested(m map[string]any, key string) any {
+	if m == nil {
+		return nil
+	}
+	spec, _ := m["spec"].(map[string]any)
+	if spec == nil {
+		return nil
+	}
+	if key == "image" || key == "imagePullPolicy" {
+		containers, _ := spec["containers"].([]any)
+		if len(containers) > 0 {
+			if c, ok := containers[0].(map[string]any); ok {
+				return c[key]
+			}
+		}
+		return nil
+	}
+	if key == "ports" {
+		containers, _ := spec["containers"].([]any)
+		if len(containers) > 0 {
+			if c, ok := containers[0].(map[string]any); ok {
+				return c[key]
+			}
+		}
+		return nil
+	}
+	return spec[key]
+}
+
+func getNestedLabels(m map[string]any) map[string]string {
+	if m == nil {
+		return nil
+	}
+	meta, _ := m["metadata"].(map[string]any)
+	if meta == nil {
+		return nil
+	}
+	labels, _ := meta["labels"].(map[string]string)
+	return labels
+}
+
+func labelMapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return true
+		}
+	}
+	return false
 }

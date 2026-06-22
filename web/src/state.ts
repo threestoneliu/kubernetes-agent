@@ -8,12 +8,16 @@ export type PendingPlan = {
   planId: string
   summary: string
   risk: Risk
-  // Raw structured diff the modal surfaces before confirm.
+  // Diffs returned by plan_write: each entry has action/resource/name/namespace
+  // and optional before/after manifests.
   diffs: Array<{
-    verb?: string
-    resource?: string
-    namespace?: string
-    name?: string
+    action: string
+    resource: string
+    name: string
+    namespace: string
+    before?: Record<string, unknown>
+    after?: Record<string, unknown>
+    risk?: string
     [key: string]: unknown
   }>
 }
