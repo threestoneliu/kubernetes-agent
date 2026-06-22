@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	dynfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/rest"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/crypto"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
@@ -195,6 +196,7 @@ func (f *stubFactory) Get(ctx context.Context, clusterID string) (dynamic.Interf
 func (f *stubFactory) Resolver(clusterID string) *Resolver {
 	return &Resolver{cache: wellKnownGVCache(), loaded: true}
 }
+func (f *stubFactory) RESTConfig(clusterID string) (*rest.Config, error) { return nil, nil }
 func (f *stubFactory) Invalidate(clusterID string) {}
 
 // wellKnownGVCache builds a Resolver pre-populated from the test's
@@ -592,6 +594,7 @@ func (e *errorFactory) Get(ctx context.Context, clusterID string) (dynamic.Inter
 }
 func (e *errorFactory) Invalidate(clusterID string) {}
 func (e *errorFactory) Resolver(clusterID string) *Resolver { return NewResolver(nil) }
+func (e *errorFactory) RESTConfig(clusterID string) (*rest.Config, error) { return nil, e.err }
 
 func TestApplyOne_Apply(t *testing.T) {
 	f, _ := newSeededFactory(t)

@@ -9,6 +9,7 @@ import (
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -23,6 +24,9 @@ type ClientFactory interface {
 	// cluster's discovery API. The resolver is cached and
 	// shared across tool calls.
 	Resolver(clusterID string) *Resolver
+	// RESTConfig returns the raw REST config for a cluster.
+	// Used for Table-format requests that need direct HTTP access.
+	RESTConfig(clusterID string) (*rest.Config, error)
 	// Invalidate drops the cached client + resolver for a cluster
 	// (e.g. after the user edits the cluster config). No-op for fakes.
 	Invalidate(clusterID string)
@@ -31,8 +35,9 @@ type ClientFactory interface {
 // clusterClients bundles the dynamic client and the Resolver that
 // share the same REST config / discovery session for one cluster.
 type clusterClients struct {
-	dynamic  dynamic.Interface
-	resolver *Resolver
+	dynamic   dynamic.Interface
+	resolver  *Resolver
+	restConfig *rest.Config
 }
 
 // KubeconfigClientFactory is the production ClientFactory: it
@@ -57,6 +62,15 @@ func NewKubeconfigClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClie
 // NewKubeconfigClientFactory for clarity.
 func NewClientFactory(db *store.DB, aead *crypto.AEAD) *KubeconfigClientFactory {
 	return NewKubeconfigClientFactory(db, aead)
+}
+
+// RESTConfig returns the REST config for the given cluster.
+func (f *KubeconfigClientFactory) RESTConfig(clusterID string) (*rest.Config, error) {
+	cc, err := f.clients(context.Background(), clusterID)
+	if err != nil {
+		return nil, err
+	}
+	return cc.restConfig, nil
 }
 
 // Get returns a dynamic client for the given cluster, decrypting
@@ -113,7 +127,7 @@ func (f *KubeconfigClientFactory) clients(ctx context.Context, clusterID string)
 		// Discovery is optional; resolver will fall back.
 		disco = nil
 	}
-	cc := &clusterClients{dynamic: dc, resolver: NewResolver(disco)}
+	cc := &clusterClients{dynamic: dc, resolver: NewResolver(disco), restConfig: cfg}
 	f.cache[clusterID] = cc
 	return cc, nil
 }

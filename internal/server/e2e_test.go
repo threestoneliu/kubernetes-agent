@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	dynfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/rest"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/agent"
 	"github.com/threestoneliu/kubernetes-agent/internal/crypto"
@@ -134,12 +135,15 @@ type fakeK8sFactory struct {
 	mu      sync.Mutex
 	scheme  *runtime.Scheme
 	clients map[string]*dynfake.FakeDynamicClient
+	// tableData caches seeded resources as Table responses for ListTable.
+	tableData map[string]*metav1.Table
 }
 
 func newFakeK8sFactory() *fakeK8sFactory {
 	return &fakeK8sFactory{
-		scheme:  runtime.NewScheme(),
-		clients: map[string]*dynfake.FakeDynamicClient{},
+		scheme:   runtime.NewScheme(),
+		clients:  map[string]*dynfake.FakeDynamicClient{},
+		tableData: map[string]*metav1.Table{},
 	}
 }
 
@@ -201,6 +205,38 @@ func (f *fakeK8sFactory) Get(ctx context.Context, clusterID string) (dynamic.Int
 	return &versionShim{inner: c}, nil
 }
 
+func (f *fakeK8sFactory) RESTConfig(clusterID string) (*rest.Config, error) {
+	return &rest.Config{
+		Host:      "https://fake-cluster:6443",
+		Transport: &fakeRoundTripper{factory: f},
+	}, nil
+}
+
+// fakeRoundTripper intercepts Table-format requests and returns
+// responses from the factory's tableData cache.
+type fakeRoundTripper struct {
+	factory *fakeK8sFactory
+}
+
+func (rt *fakeRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	rt.factory.mu.Lock()
+	table, ok := rt.factory.tableData[req.URL.Path]
+	rt.factory.mu.Unlock()
+	if !ok {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"columnDefinitions":[],"rows":[]}`)),
+			Header:     http.Header{"Content-Type": {"application/json"}},
+		}, nil
+	}
+	data, _ := json.Marshal(table)
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(string(data))),
+		Header:     http.Header{"Content-Type": {"application/json"}},
+	}, nil
+}
+
 func (f *fakeK8sFactory) Invalidate(clusterID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -253,6 +289,12 @@ func (f *fakeK8sFactory) seedPod(t *testing.T, clusterID, namespace, name string
 	_, err := c.Resource(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}).
 		Namespace(namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 	require.NoError(t, err)
+
+	// Seed the Table cache so ListTable can return the same data.
+	path := "/api/v1/namespaces/" + namespace + "/pods"
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seedTableLocked(path)
 }
 
 func (f *fakeK8sFactory) seedDeployment(t *testing.T, clusterID, namespace, name string, replicas int) {
@@ -271,7 +313,46 @@ func (f *fakeK8sFactory) seedDeployment(t *testing.T, clusterID, namespace, name
 	_, err := c.Resource(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}).
 		Namespace(namespace).Create(context.Background(), dep, metav1.CreateOptions{})
 	require.NoError(t, err)
+
+	path := "/apis/apps/v1/namespaces/" + namespace + "/deployments"
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seedTableLocked(path)
 }
+
+// seedTableLocked populates the Table cache for a resource path.
+// Caller must hold f.mu.
+func (f *fakeK8sFactory) seedTableLocked(path string) {
+	table := &metav1.Table{
+		ColumnDefinitions: []metav1.TableColumnDefinition{
+			{Name: "NAME", Type: "string"},
+			{Name: "READY", Type: "string"},
+			{Name: "STATUS", Type: "string"},
+			{Name: "AGE", Type: "string"},
+		},
+		Rows: []metav1.TableRow{},
+	}
+	switch path {
+	case "/api/v1/namespaces/default/pods":
+		for _, c := range f.clients {
+			list, _ := c.Resource(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}).Namespace("default").List(context.Background(), metav1.ListOptions{})
+			for _, item := range list.Items {
+				name := item.GetName()
+				ns := item.GetNamespace()
+				table.Rows = append(table.Rows, metav1.TableRow{
+					Cells: []any{ns + "/" + name, "1/1", "Running", "1d"},
+				})
+			}
+		}
+		if len(table.Rows) == 0 {
+			table.Rows = []metav1.TableRow{{Cells: []any{"pod-a", "1/1", "Running", "1d"}}}
+		}
+	case "/apis/apps/v1/namespaces/default/deployments":
+		table.Rows = []metav1.TableRow{{Cells: []any{"nginx", "1/1", "1", "1d"}}}
+	}
+	f.tableData[path] = table
+}
+
 
 // --- e2e runner factory ---
 
@@ -609,10 +690,11 @@ func TestE2E_ListPods(t *testing.T) {
 	}
 	require.Empty(t, resultPayload.Error, "tool result should not be an error")
 	var listOut struct {
-		Items []map[string]any `json:"items"`
+		Columns []string     `json:"columns"`
+		Rows    [][]string   `json:"rows"`
 	}
 	require.NoError(t, json.Unmarshal(resultPayload.Output, &listOut))
-	assert.Len(t, listOut.Items, 2, "should see both seeded pods")
+	assert.Len(t, listOut.Rows, 2, "should see both seeded pods")
 }
 
 // --- E2E 2: plan preview + execute (scale deployment) ---

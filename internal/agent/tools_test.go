@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
@@ -24,9 +25,10 @@ import (
 // layer so the factory can fail cleanly at the first client call.
 type stubFactory struct{}
 
-func (stubFactory) Get(ctx context.Context, id string) (k8s.ClientFactory, error) {
+func (stubFactory) Get(ctx context.Context, id string) (dynamic.Interface, error) {
 	return nil, nil
 }
+func (stubFactory) RESTConfig(id string) (*rest.Config, error) { return nil, nil }
 
 // Use the real k8s.ClientFactory type alias. Since the test doesn't
 // make any successful k8s API calls, the factory's Get just needs to
@@ -107,6 +109,7 @@ func (emptyFactory) Get(ctx context.Context, id string) (dynamic.Interface, erro
 }
 func (emptyFactory) Invalidate(id string) {}
 func (emptyFactory) Resolver(id string) *k8s.Resolver { return k8s.NewResolver(nil) }
+func (emptyFactory) RESTConfig(id string) (*rest.Config, error) { return nil, nil }
 
 func TestK8sGetHandler_InvalidJSON(t *testing.T) {
 	tools := RegisterK8sTools(&ToolDeps{Factory: emptyFactory{}})

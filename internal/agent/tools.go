@@ -70,7 +70,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 		},
 		{
 			Name:        "k8s_list",
-			Description: "List Kubernetes resources, optionally filtered by namespace and label selector. Empty namespace means all namespaces.",
+			Description: "List Kubernetes resources in table format (kubectl get style). Columns are provided by the API server. Empty namespace means all namespaces.",
 			InputSchema: listSchema,
 			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
 				var in k8s.ListInput
@@ -78,7 +78,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
 				d.fillClusterID(&in.ClusterID)
-				out, err := k8s.List(ctx, d.Factory, in)
+				out, err := k8s.ListTable(ctx, d.Factory, in)
 				if err != nil {
 					return nil, err
 				}
