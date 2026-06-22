@@ -18,6 +18,7 @@ export type PendingPlan = {
     before?: Record<string, unknown>
     after?: Record<string, unknown>
     risk?: string
+    summary?: string
     [key: string]: unknown
   }>
 }

@@ -28,6 +28,7 @@ type Diff struct {
 	Before    map[string]any `json:"before,omitempty"`
 	After     map[string]any `json:"after,omitempty"`
 	Risk      string         `json:"risk"`
+	Summary   string         `json:"summary,omitempty"`
 }
 
 type DeniedOp struct {
@@ -65,6 +66,7 @@ func PlanWrite(ctx context.Context, f ClientFactory, eng *policy.Engine, in Plan
 			return nil, fmt.Errorf("dry-run %s %s/%s: %w", op.action, op.namespace, op.name, err)
 		}
 		diff.Risk = riskFrom(eff)
+		diff.Summary = summarizeOne(*diff)
 		out.Diffs = append(out.Diffs, *diff)
 	}
 	out.Summary = summarize(out.Diffs, out.Denied)

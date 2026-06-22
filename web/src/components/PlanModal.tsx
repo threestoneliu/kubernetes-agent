@@ -99,7 +99,8 @@ function DiffCard({ diff }: { diff: DiffItem }) {
   const kind = getKind(diff.after, diff.before)
   const name = diff.name ?? 'unknown'
   const ns = diff.namespace ?? 'default'
-  const summary = summarizeChange(diff.before, diff.after)
+  // Use backend-generated summary (e.g. "创建 Deployment default/nginx") from diff.summary
+  const summary: string | null = diff.summary ?? null
 
   const yaml = diff.after ? toYAML(diff.after) : diff.before ? toYAML(diff.before) : ''
 
