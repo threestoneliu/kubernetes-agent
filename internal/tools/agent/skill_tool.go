@@ -31,7 +31,7 @@ func (t *SkillTool) Name() string {
 
 // Description returns the tool description.
 func (t *SkillTool) Description() string {
-	return "Load a SKILL.md file by its name. REQUIRED: the name field must always be provided — never call this tool without a skill name. Use when the user's task matches a skill description from the system prompt. Pass the skill name exactly as it appears in the <name> tag (e.g. \"k8s-debug-pod\"). Returns the skill's workflow instructions."
+	return "Load a SKILL.md file by its name. REQUIRED: the name parameter must always be provided. Use when the user's task matches a skill description from the system prompt. Pass the skill name exactly as it appears in the <name> tag (e.g. \"k8s-debug-pod\"). Returns the skill's workflow instructions."
 }
 
 // Handle looks up the skill by name and returns its full content.
@@ -99,7 +99,7 @@ var LoadSkillSchema = map[string]any{
 	"properties": map[string]any{
 		"name": map[string]any{
 			"type":        "string",
-			"description": "REQUIRED. Skill name exactly as it appears in the <name> tag of <available_skills> (e.g. \"k8s-debug-pod\"). Never omit or empty this field.",
+			"description": "[REQUIRED] Skill name exactly as it appears in the <name> tag of <available_skills> (e.g. \"k8s-debug-pod\"). Must be provided.",
 		},
 	},
 	"required": []string{"name"},
