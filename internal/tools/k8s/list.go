@@ -117,9 +117,18 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 // buildListURL constructs the correct API path for a resource.
 // It queries the resolver's discovery cache (APIResource.Namespaced field)
 // to determine whether to use a cluster-scoped or namespaced path.
+//
+// For namespaced resources with an empty namespace (list across all namespaces),
+// we use the cluster-level path (e.g. /api/v1/pods) instead of the
+// namespaced path (/api/v1/namespaces//pods) — this is the same path kubectl
+// uses for `kubectl get <resource> -A` and the returned Table includes a
+// "Namespace" column so the user can see which namespace each row belongs to.
 func buildListURL(resolver *Resolver, resource, host string, gvr schema.GroupVersionResource, namespace, labelSelector string) string {
-	// Cluster-scoped resources don't take a namespace segment.
-	if !resolver.IsNamespaced(resource) {
+	isNS := resolver.IsNamespaced(resource)
+
+	// Cluster-scoped resources, and namespaced resources with empty namespace
+	// (list all), use the cluster-level path.
+	if !isNS || namespace == "" {
 		var base string
 		if gvr.Group == "" {
 			base = fmt.Sprintf("%s/api/%s/%s", host, gvr.Version, gvr.Resource)
@@ -132,16 +141,12 @@ func buildListURL(resolver *Resolver, resource, host string, gvr schema.GroupVer
 		return base
 	}
 
-	// Namespaced resource.
-	ns := namespace
-	if ns == "" {
-		ns = metav1.NamespaceAll
-	}
+	// Namespaced resource with a specific namespace.
 	var base string
 	if gvr.Group == "" {
-		base = fmt.Sprintf("%s/api/%s/namespaces/%s/%s", host, gvr.Version, ns, gvr.Resource)
+		base = fmt.Sprintf("%s/api/%s/namespaces/%s/%s", host, gvr.Version, namespace, gvr.Resource)
 	} else {
-		base = fmt.Sprintf("%s/apis/%s/%s/namespaces/%s/%s", host, gvr.Group, gvr.Version, ns, gvr.Resource)
+		base = fmt.Sprintf("%s/apis/%s/%s/namespaces/%s/%s", host, gvr.Group, gvr.Version, namespace, gvr.Resource)
 	}
 	if labelSelector != "" {
 		return base + "?labelSelector=" + url.QueryEscape(labelSelector)
