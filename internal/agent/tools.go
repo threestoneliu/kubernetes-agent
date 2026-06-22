@@ -382,8 +382,8 @@ func hashString(s string) string {
 var getSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"resource":   map[string]any{"type": "string", "description": "lowercase plural resource name (e.g. pods, deployments)"},
-		"name":       map[string]any{"type": "string", "description": "resource name"},
+		"resource":   map[string]any{"type": "string", "description": "[REQUIRED] lowercase plural resource name (e.g. pods, deployments)"},
+		"name":       map[string]any{"type": "string", "description": "[REQUIRED] resource name"},
 		"namespace":  map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
 		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 	},
@@ -393,7 +393,7 @@ var getSchema = map[string]any{
 var listSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"resource":       map[string]any{"type": "string", "description": "lowercase plural resource name"},
+		"resource":       map[string]any{"type": "string", "description": "[REQUIRED] lowercase plural resource name"},
 		"namespace":      map[string]any{"type": "string", "description": "namespace (empty = all)"},
 		"label_selector": map[string]any{"type": "string", "description": "label selector (e.g. app=nginx)"},
 		"cluster_id":     map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
@@ -404,8 +404,8 @@ var listSchema = map[string]any{
 var describeSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"resource":   map[string]any{"type": "string", "description": "lowercase plural resource name"},
-		"name":       map[string]any{"type": "string", "description": "resource name"},
+		"resource":   map[string]any{"type": "string", "description": "[REQUIRED] lowercase plural resource name"},
+		"name":       map[string]any{"type": "string", "description": "[REQUIRED] resource name"},
 		"namespace":  map[string]any{"type": "string", "description": "namespace (defaults to 'default')"},
 		"cluster_id": map[string]any{"type": "string", "description": "cluster id (UUID). Optional: when omitted, the session-bound cluster is used automatically."},
 	},
@@ -417,7 +417,7 @@ var planWriteSchema = map[string]any{
 	"properties": map[string]any{
 		"operations": map[string]any{
 			"type":        "array",
-			"description": "List of write operations to plan. Each op has action (apply|delete|scale), resource, name, namespace, and for apply the manifest.",
+			"description": "[REQUIRED] List of write operations to plan. Each op has action (apply|delete|scale), resource, name, namespace, and for apply the manifest.",
 			"items": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -440,8 +440,8 @@ var planWriteSchema = map[string]any{
 var executePlanSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"plan_id":       map[string]any{"type": "string", "description": "plan_id returned by k8s_plan_write"},
-		"confirm_token": map[string]any{"type": "string", "description": "opaque token that the user must approve"},
+		"plan_id":       map[string]any{"type": "string", "description": "[REQUIRED] plan_id returned by k8s_plan_write"},
+		"confirm_token": map[string]any{"type": "string", "description": "[REQUIRED] opaque token that the user must approve"},
 	},
 	"required": []string{"plan_id", "confirm_token"},
 }
@@ -449,7 +449,7 @@ var executePlanSchema = map[string]any{
 var askUserSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
-		"question":     map[string]any{"type": "string", "description": "question to ask the user"},
+		"question":     map[string]any{"type": "string", "description": "[REQUIRED] question to ask the user"},
 		"options":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		"multi_select": map[string]any{"type": "boolean"},
 	},

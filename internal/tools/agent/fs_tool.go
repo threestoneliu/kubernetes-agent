@@ -113,7 +113,7 @@ var FSReadSchema = map[string]any{
 	"properties": map[string]any{
 		"path": map[string]any{
 			"type":        "string",
-			"description": "Absolute path to the file to read, or a path beginning with ~/. The path must be inside ~/.kubernetes-agent/.",
+			"description": "[REQUIRED] Absolute path to the file to read, or a path beginning with ~/. The path must be inside ~/.kubernetes-agent/.",
 		},
 	},
 	"required": []string{"path"},
