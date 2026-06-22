@@ -13,11 +13,9 @@ import { AskUserForm } from '../components/AskUserForm'
 import { Markdown } from '../components/Markdown'
 import { SessionsPanel } from './SessionsPanel'
 
-// Per-render message model. The assistant message is an ordered
-// list of blocks so we can render reasoning / tool calls / text
-// in the actual order the events arrived — a multi-step agent
-// turn interleaves them, and we don't want to squash them into
-// a single (reasoning, text, tools[]) tuple.
+// Per-render message model. One assistant message bubble contains
+// reasoning (collapsed) + text + tool blocks; tool results are merged
+// into their matching tool blocks within the same turn.
 type AssistantBlock =
   | { kind: 'reasoning'; text: string }
   | { kind: 'text'; text: string }
@@ -27,6 +25,7 @@ type Msg =
   | { kind: 'user'; id: string; text: string }
   | { kind: 'assistant'; id: string; blocks: AssistantBlock[] }
   | { kind: 'system'; id: string; text: string }
+  | { kind: 'tool_result'; id: string; toolName: string; toolCallId: string; output: unknown; isError: boolean }
 
 function rid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -37,12 +36,29 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 // mToMsg turns a server-side Message into the UI's Msg union.
-// Reasoning + content are folded into a single assistant block
-// (text first, reasoning collapsible). Tool call/result pairs
-// become tool blocks when both halves are present in the
-// same message row.
+// One backend row = one logical message. For assistant rows,
+// reasoning/text/tool_calls are already merged in the backend per turn.
 function mToMsg(m: import('../api').Message): Msg {
-  const id = m.id
+  if (m.role === 'user') {
+    return { kind: 'user', id: m.id, text: m.content ?? '' }
+  }
+  if (m.role === 'tool') {
+    let parsed: { tool_call_id?: string; name?: string; output?: unknown; is_error?: boolean } = {}
+    if (m.content) {
+      try { parsed = JSON.parse(m.content) } catch { /* ignore */ }
+    }
+    return {
+      kind: 'tool_result',
+      id: m.id,
+      toolName: parsed.name ?? '',
+      toolCallId: parsed.tool_call_id ?? '',
+      output: parsed.output,
+      isError: parsed.is_error ?? false,
+    }
+  }
+
+  // assistant: blocks are already in order [reasoning, text, tool_call]
+  // from the backend persistTurn merge.
   const blocks: AssistantBlock[] = []
   if (m.reasoning) blocks.push({ kind: 'reasoning', text: m.reasoning })
   if (m.content) blocks.push({ kind: 'text', text: m.content })
@@ -57,11 +73,81 @@ function mToMsg(m: import('../api').Message): Msg {
           input: tc.input ?? {},
         })
       }
-    } catch {
-      // ignore malformed tool calls
-    }
+    } catch { /* ignore */ }
   }
-  return { kind: 'assistant', id, blocks }
+  return { kind: 'assistant', id: m.id, blocks }
+}
+
+// preprocessMessages maps each backend message row to one bubble,
+// injecting tool_result rows into the matching tool blocks of the
+// preceding assistant message.
+function preprocessMessages(raw: import('../api').Message[]): Msg[] {
+  const out: Msg[] = []
+  const lastAssistant = { msg: null as Msg & {blocks: AssistantBlock[]} | null, toolMap: new Map<string, number>() }
+
+  for (const m of raw) {
+    if (m.role === 'tool') {
+      let parsed: { tool_call_id?: string; name?: string; output?: unknown; is_error?: boolean } = {}
+      if (m.content) { try { parsed = JSON.parse(m.content) } catch { /* ignore */ } }
+      const tr: Msg = {
+        kind: 'tool_result',
+        id: m.id,
+        toolCallId: parsed.tool_call_id ?? '',
+        toolName: parsed.name ?? '',
+        output: parsed.output,
+        isError: parsed.is_error ?? false,
+      }
+      if (lastAssistant.msg && lastAssistant.toolMap.has(tr.toolCallId)) {
+        const blocks = lastAssistant.msg.blocks
+        const idx = lastAssistant.toolMap.get(tr.toolCallId)!
+        if (blocks[idx]?.kind === 'tool') {
+          const tb = blocks[idx] as AssistantBlock & {result?: unknown}
+          tb.result = tr.isError
+            ? { ok: false, error: String(tr.output) }
+            : { ok: true, output: tr.output }
+        }
+      } else {
+        out.push(tr)
+      }
+      continue
+    }
+
+    if (m.role === 'user') {
+      lastAssistant.msg = null
+      lastAssistant.toolMap = new Map()
+      out.push({ kind: 'user', id: m.id, text: m.content ?? '' })
+      continue
+    }
+
+    // assistant row: build blocks and push as one bubble
+    const blocks: AssistantBlock[] = []
+    if (m.reasoning) blocks.push({ kind: 'reasoning', text: m.reasoning })
+    if (m.content) blocks.push({ kind: 'text', text: m.content })
+    if (m.tool_calls) {
+      try {
+        const arr = JSON.parse(m.tool_calls) as Array<{ id?: string; name?: string; input?: unknown }>
+        for (const tc of arr) {
+          blocks.push({
+            kind: 'tool',
+            id: tc.id ?? `${m.id}-tool`,
+            name: tc.name ?? '',
+            input: tc.input ?? {},
+          })
+        }
+      } catch { /* ignore */ }
+    }
+
+    const toolMap = new Map<string, number>()
+    blocks.forEach((b, i) => {
+      if (b.kind === 'tool') toolMap.set((b as AssistantBlock & {id:string}).id, i)
+    })
+
+    const msg = { kind: 'assistant' as const, id: m.id, blocks }
+    lastAssistant.msg = msg
+    lastAssistant.toolMap = toolMap
+    out.push(msg)
+  }
+  return out
 }
 
 function pickRisk(v: unknown): Risk {
@@ -94,7 +180,12 @@ export function ChatView() {
   // the user just has no cluster selector entries.
   React.useEffect(() => {
     listClusters()
-      .then((res) => setClusters(res.clusters))
+      .then((res) => {
+        setClusters(res.clusters)
+        if (res.clusters.length > 0 && !clusterId) {
+          setClusterId(res.clusters[0].id)
+        }
+      })
       .catch((err) => show(formatError(err)))
   }, [show])
 
@@ -180,7 +271,7 @@ export function ChatView() {
 
     try {
       const { messages } = await listMessages(newId)
-      setMsgs(messages.map(mToMsg))
+      setMsgs(preprocessMessages(messages))
       const session = await getSession(newId)
       if (session.cluster_id) setClusterId(session.cluster_id)
     } catch (err) {
@@ -344,6 +435,7 @@ export function ChatView() {
               ? { ...bufferedPlan, risk }
               : { planId, summary: '', risk, diffs: [] }
             setUi({ kind: 'plan_awaiting', plan })
+            setBusy(false)
             break
           }
           case 'ask_user': {
@@ -355,6 +447,7 @@ export function ChatView() {
             const multi = payload.multi_select === true
             const ask = { question, options, multi }
             setUi({ kind: 'ask_user', ask })
+            setBusy(false)
             break
           }
           case 'cluster_switch': {
@@ -407,55 +500,45 @@ export function ChatView() {
 
   async function confirmPlan() {
     if (ui.kind !== 'plan_awaiting' || !sessionId) return
-    setBusy(true)
     try {
+      pushSystem(`已确认执行 plan ${ui.plan.planId}`)
       await resumeSession(sessionId, {
         kind: 'plan',
         plan_id: ui.plan.planId,
         approved: true,
       })
-      // The backend confirms the agent loop will continue — surface a
-      // system line so the user has feedback while we wait for the
-      // follow-up SSE stream (which a future change wires up via
-      // openChatSse with the same sessionId).
-      pushSystem(`已确认执行 plan ${ui.plan.planId}`)
       setUi({ kind: 'streaming' })
     } catch (err) {
       show(formatError(err))
-    } finally {
-      setBusy(false)
+      setUi(idle)
     }
   }
 
   async function cancelPlan() {
     if (ui.kind !== 'plan_awaiting' || !sessionId) return
-    setBusy(true)
     try {
+      pushSystem(`已取消 plan ${ui.plan.planId}`)
       await resumeSession(sessionId, {
         kind: 'plan',
         plan_id: ui.plan.planId,
         approved: false,
       })
-      pushSystem(`已取消 plan ${ui.plan.planId}`)
       setUi(idle)
     } catch (err) {
       show(formatError(err))
-    } finally {
-      setBusy(false)
+      setUi(idle)
     }
   }
 
   async function submitAsk(answer: string) {
     if (ui.kind !== 'ask_user' || !sessionId) return
-    setBusy(true)
     try {
-      await resumeSession(sessionId, { kind: 'ask_user', answer })
       pushSystem(`已回答: ${answer}`)
+      await resumeSession(sessionId, { kind: 'ask_user', answer })
       setUi({ kind: 'streaming' })
     } catch (err) {
       show(formatError(err))
-    } finally {
-      setBusy(false)
+      setUi(idle)
     }
   }
 
@@ -480,75 +563,75 @@ export function ChatView() {
         clusterNameById={clusterNameById}
         relativeTime={relativeTime}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-      <div className="toolbar">
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          集群:
-          <select
-            value={clusterId}
-            onChange={(e) => setClusterId(e.target.value)}
-            disabled={ui.kind !== 'idle'}
-          >
-            <option value="">(未选择)</option>
-            {clusters.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </label>
-        <span className="muted">
-          会话: {sessionId ? sessionId.slice(0, 8) : '(新建)'}
-        </span>
-        <span className="muted" style={{ marginLeft: 'auto' }}>
-          {ui.kind === 'streaming' && '生成中…'}
-          {ui.kind === 'plan_awaiting' && '等待确认计划'}
-          {ui.kind === 'ask_user' && '等待用户回答'}
-          {ui.kind === 'error' && '错误'}
-        </span>
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, gap: '12px' }}>
+        <div className="toolbar">
+          <label style={{ gap: 6, alignItems: 'center' }}>
+            集群:
+            <select
+              value={clusterId}
+              onChange={(e) => setClusterId(e.target.value)}
+              disabled={ui.kind !== 'idle'}
+            >
+              {clusterId ? null : <option value="">-- 未选择 --</option>}
+              {clusters.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <span className="muted" style={{ marginLeft: 'auto' }}>
+            会话: {sessionId ? sessionId.slice(0, 8) : '(新建)'}
+          </span>
+          <span className="label-tag">
+            {ui.kind === 'streaming' && '生成中…'}
+            {ui.kind === 'plan_awaiting' && '等待确认计划'}
+            {ui.kind === 'ask_user' && '等待用户回答'}
+            {ui.kind === 'error' && '错误'}
+          </span>
+        </div>
 
-      <div ref={streamRef} className="chat-stream">
-        {msgs.length === 0 && (
-          <div className="muted" style={{ padding: 16 }}>
-            向 Agent 描述一个 Kubernetes 任务,例如 "列出 production 命名空间下所有 Pod"。
-          </div>
+        <div ref={streamRef} className="chat-stream">
+          {msgs.length === 0 && (
+            <div className="muted" style={{ padding: '8px 0' }}>
+              向 Agent 描述一个 Kubernetes 任务,例如 "列出 production 命名空间下所有 Pod"。
+            </div>
+          )}
+          {msgs.map((m) => (
+            <Bubble key={m.id} msg={m} />
+          ))}
+        </div>
+
+        <div className="composer">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                send()
+              }
+            }}
+            disabled={inputDisabled}
+            placeholder="输入自然语言,Enter 发送"
+          />
+          {ui.kind === 'streaming' ? (
+            <button onClick={stop} disabled={!busy} className="danger">停止</button>
+          ) : (
+            <button onClick={send} disabled={!canSend()} className="primary send">发送</button>
+          )}
+        </div>
+
+        {ui.kind === 'plan_awaiting' && (
+          <PlanModal
+            plan={ui.plan}
+            onConfirm={() => void confirmPlan()}
+            onCancel={() => void cancelPlan()}
+            busy={busy}
+          />
         )}
-        {msgs.map((m) => (
-          <Bubble key={m.id} msg={m} />
-        ))}
-      </div>
-
-      <div className="composer">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          disabled={inputDisabled}
-          placeholder="输入自然语言,Enter 发送"
-        />
-        {ui.kind === 'streaming' ? (
-          <button onClick={stop} disabled={!busy} className="danger">停止</button>
-        ) : (
-          <button onClick={send} disabled={!canSend()} className="primary">发送</button>
+        {ui.kind === 'ask_user' && (
+          <AskUserForm ask={ui.ask} onSubmit={(a) => void submitAsk(a)} busy={busy} />
         )}
       </div>
-
-      {ui.kind === 'plan_awaiting' && (
-        <PlanModal
-          plan={ui.plan}
-          onConfirm={() => void confirmPlan()}
-          onCancel={() => void cancelPlan()}
-          busy={busy}
-        />
-      )}
-      {ui.kind === 'ask_user' && (
-        <AskUserForm ask={ui.ask} onSubmit={(a) => void submitAsk(a)} busy={busy} />
-      )}
-    </div>
     </div>
   )
 }
@@ -566,6 +649,20 @@ function Bubble({ msg }: { msg: Msg }) {
       <div className="msg" style={{ alignSelf: 'center' }}>
         <span className="muted">— {msg.text} —</span>
       </div>
+    )
+  }
+  if (msg.kind === 'tool_result') {
+    return (
+      <details className={`bubble ${msg.isError ? 'tool-err' : 'tool-ok'}`} style={{ marginTop: 6 }}>
+        <summary>
+          🔧 {msg.toolName}
+          <span className="muted" style={{ marginLeft: 8 }}>{msg.isError ? '✗' : '✓'}</span>
+        </summary>
+        <div style={{ marginTop: 6 }}>
+          <div className="muted">输出:</div>
+          <pre>{formatJson(msg.output)}</pre>
+        </div>
+      </details>
     )
   }
   // assistant

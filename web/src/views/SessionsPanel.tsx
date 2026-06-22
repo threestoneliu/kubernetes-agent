@@ -34,15 +34,6 @@ export function SessionsPanel(props: Props) {
   const [deleteId, setDeleteId] = React.useState<string | null>(null)
   const [editing, setEditing] = React.useState<{ id: string; title: string } | null>(null)
   const [bulkOpen, setBulkOpen] = React.useState(false)
-  const [searchInput, setSearchInput] = React.useState(props.searchQ)
-
-  // Debounce search input → onSearch.
-  React.useEffect(() => {
-    const t = setTimeout(() => {
-      if (searchInput !== props.searchQ) props.onSearch(searchInput)
-    }, 300)
-    return () => clearTimeout(t)
-  }, [searchInput, props.searchQ, props])
 
   const sortValue = `${props.sort}:${props.order}`
   const activeDeleteSession = deleteId
@@ -51,17 +42,8 @@ export function SessionsPanel(props: Props) {
 
   return (
     <div className="sessions-panel">
-      <div className="toolbar" style={{ flexWrap: 'wrap', gap: 6 }}>
-        <button onClick={props.onCreate} className="primary" data-testid="new-session">
-          ＋ 新建
-        </button>
-        <input
-          type="search"
-          placeholder="搜索标题…"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          data-testid="session-search"
-        />
+      <div className="panel-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span>会话列表</span>
         <select
           value={sortValue}
           onChange={(e) => {
@@ -69,6 +51,7 @@ export function SessionsPanel(props: Props) {
             if (opt) props.onSort(opt.sort, opt.order)
           }}
           data-testid="session-sort"
+          style={{ fontSize: 11, padding: '2px 6px' }}
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -107,13 +90,15 @@ export function SessionsPanel(props: Props) {
       </ul>
 
       <div className="panel-footer">
+        <button onClick={props.onCreate} className="primary" data-testid="new-session">
+          + 新建会话
+        </button>
         <button
           onClick={() => setBulkOpen(true)}
           disabled={props.streaming || props.sessions.length === 0}
-          className="danger"
           data-testid="bulk-clear"
         >
-          清空全部
+          🗑 清除全部
         </button>
       </div>
 
@@ -185,6 +170,22 @@ function SessionRow({
   relativeTime: string
 }) {
   const [menuOpen, setMenuOpen] = React.useState(false)
+  const menuRef = React.useRef<HTMLUListElement>(null)
+  const menuOpenRef = React.useRef(false)
+
+  menuOpenRef.current = menuOpen
+
+  React.useEffect(() => {
+    if (!menuOpen) return
+    const handler = (e: MouseEvent) => {
+      const btn = (e.target as Element)?.closest('[data-testid="session-menu-btn"]')
+      if (btn) return
+      if (menuRef.current?.contains(e.target as Node)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [menuOpen])
 
   return (
     <li
@@ -192,6 +193,7 @@ function SessionRow({
       onClick={onSelect}
       data-testid="session-row"
     >
+      <div className="session-dot" />
       <div className="row-main">
         {editing ? (
           <input
@@ -212,75 +214,37 @@ function SessionRow({
             data-testid="session-rename-input"
           />
         ) : (
-          <div className="title-line">
-            <span
-              className="title"
-              onDoubleClick={(e) => {
-                e.stopPropagation()
-                onStartEdit()
-              }}
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              {session.title}
-            </span>
-            {clusterName && <span className="cluster-tag" style={{ flexShrink: 0 }}>{clusterName}</span>}
-          </div>
+          <span className="title" onDoubleClick={(e) => { e.stopPropagation(); onStartEdit() }}>
+            {session.title}
+          </span>
         )}
-        <div className="muted time-line">{relativeTime}</div>
+        <span className="muted time-line">{relativeTime}</span>
       </div>
       <button
         className="row-menu-btn"
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen((v) => !v)
-        }}
+        onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
         aria-label="会话菜单"
         data-testid="session-menu-btn"
+        style={editing ? { opacity: 0.3, pointerEvents: 'none' } : {}}
       >
         ⋯
       </button>
       {menuOpen && (
-        <ul
-          className="row-menu"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <li
-            onClick={() => {
-              setMenuOpen(false)
-              onStartEdit()
-            }}
-          >
-            ✏️ 重命名
-          </li>
+        <ul ref={menuRef} className="row-menu" onClick={(e) => e.stopPropagation()}>
+          <li onClick={() => { setMenuOpen(false); onStartEdit() }}>✏️ 重命名</li>
           <li>
-            <a
-              href={exportSessionUrl(session.id, 'md')}
-              download={`session-${session.id.slice(0, 8)}.md`}
-            >
+            <a href={exportSessionUrl(session.id, 'md')} download={`session-${session.id.slice(0, 8)}.md`}>
               📄 导出 Markdown
             </a>
           </li>
           <li>
-            <a
-              href={exportSessionUrl(session.id, 'json')}
-              download={`session-${session.id.slice(0, 8)}.json`}
-            >
+            <a href={exportSessionUrl(session.id, 'json')} download={`session-${session.id.slice(0, 8)}.json`}>
               🗂 导出 JSON
             </a>
           </li>
           <li
             className="danger"
-            onClick={() => {
-              if (streaming) return
-              setMenuOpen(false)
-              onDelete()
-            }}
+            onClick={() => { if (streaming) return; setMenuOpen(false); onDelete() }}
             style={streaming ? { opacity: 0.4, pointerEvents: 'none' } : {}}
             title={streaming ? '请先停止当前会话' : undefined}
             data-testid="session-delete"

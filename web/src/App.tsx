@@ -14,47 +14,47 @@ function Shell() {
   const { toast, dismiss } = useToast()
   return (
     <div className="app">
-      {/* Left nav — 60px icon nav */}
-      <nav className="nav">
-        <button
-          className={`nav-item ${view === 'chat' ? 'active' : ''}`}
-          onClick={() => setView('chat')}
-          title="对话"
-        >
-          💬
-        </button>
-        <button
-          className={`nav-item ${view === 'clusters' ? 'active' : ''}`}
-          onClick={() => setView('clusters')}
-          title="集群"
-        >
-          ☸
-        </button>
-        <button
-          className={`nav-item ${view === 'policies' ? 'active' : ''}`}
-          onClick={() => setView('policies')}
-          title="策略"
-        >
-          🛡
-        </button>
-
-        <div style={{ flex: 1 }} />
-
-        <button className="nav-item" onClick={toggle} title="切换主题">
-          {theme === 'dark' ? '🌙' : '☀️'}
-        </button>
-        <button className="nav-item" title="设置">
-          ⚙
-        </button>
-      </nav>
-
-      {/* Right — main content, always full width */}
-      <main className="main">
-        {view === 'chat' && <ChatView />}
-        {view === 'clusters' && <ClusterView />}
-        {view === 'policies' && <PolicyView />}
-      </main>
-
+      <header className="header-bar">
+        <div className="header-logo">
+          <span>🤖</span>
+          <span>Kubernetes Agent</span>
+        </div>
+        <nav className="header-nav">
+          <button
+            className={`nav-tab ${view === 'chat' ? 'active' : ''}`}
+            onClick={() => setView('chat')}
+          >
+            对话
+          </button>
+          <button
+            className={`nav-tab ${view === 'clusters' ? 'active' : ''}`}
+            onClick={() => setView('clusters')}
+          >
+            集群
+          </button>
+          <button
+            className={`nav-tab ${view === 'policies' ? 'active' : ''}`}
+            onClick={() => setView('policies')}
+          >
+            策略
+          </button>
+        </nav>
+        <div className="header-actions">
+          <button className="icon-btn" onClick={toggle} title="切换主题">
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+          <button className="icon-btn" title="设置">
+            ⚙
+          </button>
+        </div>
+      </header>
+      <div className="app-body">
+        <main className="main">
+          {view === 'chat' && <ChatView />}
+          {view === 'clusters' && <ClusterView />}
+          {view === 'policies' && <PolicyView />}
+        </main>
+      </div>
       {toast && <ErrorToast message={toast} onDismiss={dismiss} />}
     </div>
   )
