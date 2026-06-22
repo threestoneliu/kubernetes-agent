@@ -44,6 +44,9 @@ type Runner struct {
 	Deps ToolDeps
 	// SystemPrompt overrides llm.SystemPrompt when non-empty.
 	SystemPrompt string
+	// SkillsPrompt contains the <available_skills> XML injected
+	// into the system prompt for LLM skill matching.
+	SkillsPrompt string
 	// MaxRetries bounds retry attempts on transient stream errors.
 	// Defaults to 1 when zero.
 	MaxRetries int
@@ -99,8 +102,21 @@ func (r *Runner) Run(ctx context.Context, userMessage string) error {
 
 	msgs := []transcriptMessage{
 		{Role: llm.RoleSystem, Parts: []llm.ContentPart{{Type: "text", Text: r.systemPrompt()}}},
-		{Role: llm.RoleUser, Parts: []llm.ContentPart{{Type: "text", Text: userMessage}}},
 	}
+	// Load session history from store, oldest first.
+	if r.Deps.Store != nil {
+		history, err := r.Deps.Store.ListMessagesBySession(ctx, r.Session.ID)
+		if err == nil && len(history) > 0 {
+			for _, m := range history {
+				parts := contentToParts(m)
+				if len(parts) > 0 {
+					msgs = append(msgs, transcriptMessage{Role: llm.Role(m.Role), Parts: parts})
+				}
+			}
+		}
+	}
+	// Current user turn goes last.
+	msgs = append(msgs, transcriptMessage{Role: llm.RoleUser, Parts: []llm.ContentPart{{Type: "text", Text: userMessage}}})
 
 	maxRetries := r.MaxRetries
 	if maxRetries < 0 {
@@ -297,12 +313,16 @@ func (r *Runner) emitError(code, msg string, retryable bool) error {
 }
 
 // systemPrompt returns the configured system prompt or the package
-// default.
+// default, plus any injected skills prompt.
 func (r *Runner) systemPrompt() string {
-	if r.SystemPrompt != "" {
-		return r.SystemPrompt
+	base := r.SystemPrompt
+	if base == "" {
+		base = llm.SystemPrompt
 	}
-	return llm.SystemPrompt
+	if r.SkillsPrompt != "" {
+		return base + "\n" + r.SkillsPrompt
+	}
+	return base
 }
 
 // truncate drops oldest non-system messages until the transcript's
@@ -511,6 +531,57 @@ func retryBackoff(attempt int) time.Duration {
 func jsonEscape(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b[1 : len(b)-1])
+}
+
+// contentToParts converts a store.Message into the []llm.ContentPart
+// form used by the agent loop's transcript. The reverse direction
+// (transcript → store) is handled by persistTurn.
+func contentToParts(m store.Message) []llm.ContentPart {
+	var parts []llm.ContentPart
+	// Text content.
+	if m.Content != nil && *m.Content != "" {
+		parts = append(parts, llm.ContentPart{Type: "text", Text: *m.Content})
+	}
+	// Reasoning content.
+	if m.Reasoning != nil && *m.Reasoning != "" {
+		parts = append(parts, llm.ContentPart{Type: "reasoning", Text: *m.Reasoning})
+	}
+	// Tool calls: stored as JSON array of {id, name, input}.
+	if m.ToolCalls != nil && *m.ToolCalls != "" {
+		var calls []map[string]any
+		if err := json.Unmarshal([]byte(*m.ToolCalls), &calls); err == nil {
+			for _, c := range calls {
+				id, _ := c["id"].(string)
+				name, _ := c["name"].(string)
+				inputRaw, _ := c["input"].(json.RawMessage)
+				parts = append(parts, llm.ContentPart{
+					Type:       "tool_call",
+					ToolCallID: id,
+					ToolName:   name,
+					Input:      inputRaw,
+				})
+			}
+		}
+	}
+	// Tool result: stored in Content as JSON {tool_call_id, name, output, is_error}.
+	// Only present for role=tool messages.
+	if m.Role == string(llm.RoleTool) && m.Content != nil && *m.Content != "" {
+		var result map[string]any
+		if err := json.Unmarshal([]byte(*m.Content), &result); err == nil {
+			tcid, _ := result["tool_call_id"].(string)
+			name, _ := result["name"].(string)
+			output, _ := result["output"].(string)
+			isErr, _ := result["is_error"].(bool)
+			parts = append(parts, llm.ContentPart{
+				Type:       "tool_result",
+				ToolCallID: tcid,
+				ToolName:   name,
+				Output:     output,
+				IsError:    isErr,
+			})
+		}
+	}
+	return parts
 }
 
 // Compile-time check: http.Status* is referenced indirectly by the

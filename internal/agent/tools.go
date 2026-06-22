@@ -19,10 +19,11 @@ import (
 // One ToolDeps instance is shared across the six handlers. The Runner
 // constructs it once when it starts a turn and passes it down.
 type ToolDeps struct {
-	Factory k8s.ClientFactory
-	Engine  *policy.Engine
-	Store   *store.DB
-	Session *Session
+	Factory          k8s.ClientFactory
+	Engine           *policy.Engine
+	Store            *store.DB
+	Session          *Session
+	FSReadAllowedDir string // Directory for fs_read tool to restrict access
 	// Emit is called by handlers that need to surface side-channel
 	// events before returning their tool output. In particular,
 	// plan_write emits PlanReady + PlanAwaitingConfirm via Emit
@@ -254,6 +255,19 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				}
 				out := k8s.AskUser(in)
 				return json.Marshal(out)
+			},
+		},
+		// fs_read tool - only registered if FSReadAllowedDir is set
+		{
+			Name:        "fs_read",
+			Description: "Read a file from the local filesystem. Access is restricted to ~/.kubernetes-agent/ directory.",
+			InputSchema: fsReadSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				if d.FSReadAllowedDir == "" {
+					return json.Marshal(fsReadError{Error: "fs_read not configured"})
+				}
+				tool := NewFSReadTool(d.FSReadAllowedDir)
+				return tool.Handle(ctx, call.Input)
 			},
 		},
 	}

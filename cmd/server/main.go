@@ -19,6 +19,7 @@ import (
 	"github.com/threestoneliu/kubernetes-agent/internal/logging"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
 	"github.com/threestoneliu/kubernetes-agent/internal/server"
+	"github.com/threestoneliu/kubernetes-agent/internal/skills"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
@@ -95,7 +96,18 @@ func buildDeps(cfg *config.Config, db *store.DB, aead *crypto.AEAD) server.Deps 
 	registry := buildRegistry(cfg)
 	factory := k8s.NewClientFactory(db, aead)
 	engine := &policy.Engine{Rules: policy.DefaultRules()}
-	rf := newRunnerFactory(registry, db, factory, engine, cfg.LLM.Default)
+
+	// Load skills
+	var skillPromptBuilder *skills.PromptBuilder
+	var fsReadAllowedDir string
+	if cfg.Skills.Enabled {
+		skillLoader := skills.NewLoader(cfg.Skills.Dir)
+		skillEntries, _ := skillLoader.LoadAll() // fail-safe
+		skillPromptBuilder = skills.NewPromptBuilder(skillEntries)
+		fsReadAllowedDir = cfg.Skills.Dir
+	}
+
+	rf := newRunnerFactory(registry, db, factory, engine, cfg.LLM.Default, skillPromptBuilder, fsReadAllowedDir)
 	return server.Deps{
 		DB:            db,
 		AEAD:          aead,
@@ -152,23 +164,27 @@ func buildClient(p llm.Provider) (llm.Client, error) {
 // with the six k8s tools, the policy engine, the store, and the
 // per-session state.
 type runnerFactory struct {
-	registry     *llm.Registry
-	defaultName  string
-	defaultCli   llm.Client
-	db           *store.DB
-	factory      k8s.ClientFactory
-	engine       *policy.Engine
+	registry           *llm.Registry
+	defaultName        string
+	defaultCli        llm.Client
+	db                *store.DB
+	factory           k8s.ClientFactory
+	engine            *policy.Engine
+	skillPromptBuilder *skills.PromptBuilder
+	fsReadAllowedDir  string
 }
 
-func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory, engine *policy.Engine, defaultName string) *runnerFactory {
+func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory, engine *policy.Engine, defaultName string, skillPromptBuilder *skills.PromptBuilder, fsReadAllowedDir string) *runnerFactory {
 	cli := pickDefaultClient(reg, defaultName)
 	return &runnerFactory{
-		registry:    reg,
-		defaultName: defaultName,
-		defaultCli:  cli,
-		db:          db,
-		factory:     factory,
-		engine:      engine,
+		registry:           reg,
+		defaultName:        defaultName,
+		defaultCli:        cli,
+		db:                db,
+		factory:           factory,
+		engine:            engine,
+		skillPromptBuilder: skillPromptBuilder,
+		fsReadAllowedDir:  fsReadAllowedDir,
 	}
 }
 
@@ -184,8 +200,12 @@ func (rf *runnerFactory) NewRunner(sessionID, clusterID string) *agent.Runner {
 	// mutates — Run wires deps.Emit and deps.Session lazily
 	// on the first Chat call so plan / ask can surface events
 	// and block on the per-session resume channels.
-	r := &agent.Runner{Client: cli, Store: rf.db}
-	r.Deps = agent.ToolDeps{Factory: rf.factory, Engine: rf.engine, Store: rf.db}
+	var skillsPrompt string
+	if rf.skillPromptBuilder != nil {
+		skillsPrompt = rf.skillPromptBuilder.FormatSkillsForPrompt()
+	}
+	r := &agent.Runner{Client: cli, Store: rf.db, SkillsPrompt: skillsPrompt}
+	r.Deps = agent.ToolDeps{Factory: rf.factory, Engine: rf.engine, Store: rf.db, FSReadAllowedDir: rf.fsReadAllowedDir}
 	r.Tools = agent.RegisterK8sTools(&r.Deps)
 	return r
 }

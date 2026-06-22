@@ -37,11 +37,17 @@ type Logging struct {
 	Format string `yaml:"format"`
 }
 
+type Skills struct {
+	Dir    string `yaml:"dir"`
+	Enabled bool   `yaml:"enabled"`
+}
+
 type Config struct {
 	Server  Server  `yaml:"server"`
 	Storage Storage `yaml:"storage"`
 	LLM     LLM     `yaml:"llm"`
 	Logging Logging `yaml:"logging"`
+	Skills  Skills  `yaml:"skills"`
 }
 
 var envPattern = regexp.MustCompile(`\$\{([A-Z_][A-Z0-9_]*)\}`)
@@ -76,6 +82,13 @@ func Load() (*Config, error) {
 		c.Storage.DBPath = "~/.kubernetes-agent/data.db"
 	}
 	c.Storage.DBPath = expandHome(c.Storage.DBPath)
+	if c.Skills.Dir == "" {
+		c.Skills.Dir = "~/.kubernetes-agent/skills"
+	}
+	c.Skills.Dir = expandHome(c.Skills.Dir)
+	if !c.Skills.Enabled {
+		c.Skills.Enabled = true
+	}
 	return &c, nil
 }
 
