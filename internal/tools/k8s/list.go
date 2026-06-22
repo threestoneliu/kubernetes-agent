@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
@@ -68,25 +69,7 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 	}
 	gvr := f.Resolver(in.ClusterID).Resolve(in.Resource)
 
-	base := cfg.Host
-	if gvr.Group == "" {
-		base += fmt.Sprintf("/api/%s/namespaces/", gvr.Version)
-	} else {
-		base += fmt.Sprintf("/apis/%s/%s/namespaces/", gvr.Group, gvr.Version)
-	}
-	ns := in.Namespace
-	if ns == "" {
-		ns = metav1.NamespaceAll
-	}
-	urlPath := base + ns + "/" + gvr.Resource
-
-	q := url.Values{}
-	if in.LabelSelector != "" {
-		q.Set("labelSelector", in.LabelSelector)
-	}
-	if len(q) > 0 {
-		urlPath += "?" + q.Encode()
-	}
+	urlPath := buildListURL(cfg.Host, gvr, in.Namespace, in.LabelSelector)
 
 	req, err := http.NewRequest("GET", urlPath, nil)
 	if err != nil {
@@ -94,7 +77,6 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 	}
 	req.Header.Set("Accept", "application/json;as=Table;v=v1;g=meta.k8s.io")
 
-	// Build a transport from the REST config and create an HTTP client.
 	transport, err := rest.TransportFor(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("build transport: %w", err)
@@ -129,4 +111,60 @@ func ListTable(ctx context.Context, f ClientFactory, in ListInput) (*TableOutput
 		rows = append(rows, cells)
 	}
 	return &TableOutput{Columns: cols, Rows: rows}, nil
+}
+
+// buildListURL constructs the correct API path for a resource.
+// Cluster-scoped resources (nodes, persistentvolumes, namespaces, etc.)
+// use /api/v1/<resource> or /apis/<group>/<version>/<resource>.
+// Namespaced resources use /api/v1/namespaces/<ns>/<resource> or
+// /apis/<group>/<version>/namespaces/<ns>/<resource>.
+func buildListURL(host string, gvr schema.GroupVersionResource, namespace, labelSelector string) string {
+	// Cluster-scoped resources don't take a namespace segment.
+	if isClusterScoped(gvr.Resource) {
+		var base string
+		if gvr.Group == "" {
+			base = fmt.Sprintf("%s/api/%s/%s", host, gvr.Version, gvr.Resource)
+		} else {
+			base = fmt.Sprintf("%s/apis/%s/%s/%s", host, gvr.Group, gvr.Version, gvr.Resource)
+		}
+		if labelSelector != "" {
+			return base + "?labelSelector=" + url.QueryEscape(labelSelector)
+		}
+		return base
+	}
+
+	// Namespaced resource.
+	ns := namespace
+	if ns == "" {
+		ns = metav1.NamespaceAll
+	}
+	var base string
+	if gvr.Group == "" {
+		base = fmt.Sprintf("%s/api/%s/namespaces/%s/%s", host, gvr.Version, ns, gvr.Resource)
+	} else {
+		base = fmt.Sprintf("%s/apis/%s/%s/namespaces/%s/%s", host, gvr.Group, gvr.Version, ns, gvr.Resource)
+	}
+	if labelSelector != "" {
+		return base + "?labelSelector=" + url.QueryEscape(labelSelector)
+	}
+	return base
+}
+
+// isClusterScoped returns true for known cluster-scoped (non-namespaced)
+// built-in resources. These resources do NOT live under
+// /namespaces/<ns>/ — their path is /api/v1/<resource> (core group)
+// or /apis/<group>/<version>/<resource> (named groups).
+func isClusterScoped(resource string) bool {
+	// This is the exhaustive list of built-in cluster-scoped resources
+	// users are likely to list. Cluster-scoped CRDs are handled by the
+	// discovery fallback (they'll 404 on the namespaced path, which is
+	// the same failure mode as before — not a regression).
+	switch resource {
+	case "nodes", "namespaces", "persistentvolumes", "storageclasses",
+		"componentstatuses", "nodes/status", "namespaces/status",
+		"persistentvolumes/status", "events":
+		return true
+	default:
+		return false
+	}
 }
