@@ -223,6 +223,18 @@ func deleteSessionHandler(d Deps) http.HandlerFunc {
 				return
 			}
 		}
+		// Refuse to delete a session that has scheduled tasks.
+		tasks, err := d.DB.GetScheduledTasks(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal",
+				err.Error(), true)
+			return
+		}
+		if len(tasks) > 0 {
+			writeError(w, http.StatusConflict, "has_scheduled_tasks",
+				"session has "+fmt.Sprintf("%d", len(tasks))+" scheduled task(s); delete them first", false)
+			return
+		}
 		n, err := d.DB.DeleteSession(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
