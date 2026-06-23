@@ -319,6 +319,9 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				if in.Prompt == "" {
+					return nil, fmt.Errorf("prompt is required — this is the instruction sent when the task fires")
+				}
 				if in.SessionID == "" {
 					if d.Session == nil {
 						return nil, fmt.Errorf("session_id is required (no active session)")
@@ -336,6 +339,7 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				task := &store.ScheduledTask{
 					ID:        uuid.NewString(),
 					Name:      in.Name,
+					Prompt:    in.Prompt,
 					CronExpr:  in.CronExpr,
 					OnceAt:    in.OnceAt,
 					SessionID: in.SessionID,
@@ -564,16 +568,18 @@ var askUserSchema = map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"name":       map[string]any{"type": "string", "description": "[REQUIRED] task name"},
+			"prompt":     map[string]any{"type": "string", "description": "[REQUIRED] the instruction text to send when the task fires (e.g. \"帮我检查 pods 状态\")"},
 			"cron_expr":  map[string]any{"type": "string", "description": "cron expression (e.g. \"0 9 * * *\")"},
 			"once_at":    map[string]any{"type": "number", "description": "UNIX timestamp for one-shot execution"},
 			"session_id": map[string]any{"type": "string", "description": "session to send the scheduled message to. Defaults to the current conversation session if omitted."},
 			"cluster_id": map[string]any{"type": "string", "description": "cluster id for the runner"},
 		},
-		"required": []string{"name"},
+		"required": []string{"name", "prompt"},
 	}
 
 	type scheduleTaskInput struct {
 		Name      string  `json:"name"`
+		Prompt    string  `json:"prompt"`
 		CronExpr  *string `json:"cron_expr,omitempty"`
 		OnceAt    *int64  `json:"once_at,omitempty"`
 		SessionID string  `json:"session_id,omitempty"`
