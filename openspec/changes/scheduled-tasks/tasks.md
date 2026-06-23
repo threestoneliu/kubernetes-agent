@@ -1,8 +1,8 @@
 ## 1. 数据库层
 
-- [ ] 1.1 在 `internal/store/` 新增 `scheduled_tasks` 和 `scheduled_runs` 表的 schema 定义和 migration
-- [ ] 1.2 在 `store.go` 新增 `ScheduledTask` struct 和 CRUD 方法（`CreateScheduledTask`、`GetScheduledTasks`、`GetScheduledTask`、`UpdateScheduledTask`、`DeleteScheduledTask`）
-- [ ] 1.3 新增 `ScheduledRun` struct 和 `CreateScheduledRun`、`UpdateScheduledRun` 方法
+- [x] 1.1 在 `internal/store/` 新增 `scheduled_tasks` 和 `scheduled_runs` 表的 schema 定义和 migration
+- [x] 1.2 在 `store.go` 新增 `ScheduledTask` struct 和 CRUD 方法（`CreateScheduledTask`、`GetScheduledTasks`、`GetScheduledTask`、`UpdateScheduledTask`、`DeleteScheduledTask`）
+- [x] 1.3 新增 `ScheduledRun` struct 和 `CreateScheduledRun`、`UpdateScheduledRun` 方法
 
 ## 2. Scheduler 核心
 

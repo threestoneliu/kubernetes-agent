@@ -18,6 +18,7 @@ import (
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/logging"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/scheduler"
 	"github.com/threestoneliu/kubernetes-agent/internal/server"
 	"github.com/threestoneliu/kubernetes-agent/internal/skills"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
@@ -49,10 +50,20 @@ func run() error {
 	defer func() { _ = db.Close() }()
 
 	deps := buildDeps(cfg, db, aead)
+
+	// Build runner factory for the scheduler.
+	schedRunnerFactory := func(sessionID, clusterID string) *agent.Runner {
+		return deps.RunnerFactory.NewRunner(sessionID, clusterID)
+	}
+	deps.Scheduler = scheduler.NewScheduler(db, schedRunnerFactory, deps.Sessions)
+
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	deps.LLM.Health = llm.PingAll(pingCtx, deps.LLM.Providers, 1)
 	pingCancel()
 	router := server.NewRouter(deps)
+
+	// Start scheduler in background.
+	go deps.Scheduler.Run(ctx)
 
 	addr := net.JoinHostPort(cfg.Server.Host, fmt.Sprintf("%d", cfg.Server.Port))
 	srv := &http.Server{

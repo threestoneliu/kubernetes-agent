@@ -9,6 +9,7 @@ import (
 	"github.com/threestoneliu/kubernetes-agent/internal/crypto"
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/scheduler"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 	"github.com/threestoneliu/kubernetes-agent/internal/tools/k8s"
 )
@@ -33,6 +34,8 @@ type Deps struct {
 	// response. The chatHandler registers each new session here
 	// before kicking off the runner goroutine.
 	Sessions *agent.SessionManager
+	// Scheduler runs in the background and triggers scheduled tasks.
+	Scheduler *scheduler.Scheduler
 }
 
 // RunnerFactory returns a ready-to-Run agent.Runner. The chat
@@ -81,6 +84,14 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/{id}/messages", listMessagesHandler(d))
 		r.Get("/{id}/export", exportSessionHandler(d))
 		r.Post("/{id}/resume", resumeHandler(d))
+	})
+
+	r.Route("/api/scheduled-tasks", func(r chi.Router) {
+		r.Get("/", listScheduledTasksHandler(d))
+		r.Post("/", createScheduledTaskHandler(d))
+		r.Delete("/{id}", deleteScheduledTaskHandler(d))
+		r.Patch("/{id}", updateScheduledTaskHandler(d))
+		r.Post("/{id}/run", runScheduledTaskHandler(d))
 	})
 
 	// SPA fallback is mounted last so the explicit /api/* and

@@ -15,10 +15,11 @@ type Message struct {
 	ToolCallID *string
 	Reasoning  *string
 	CreatedAt  int64
+	Source     string // "user", "llm", "scheduled"; empty = "user"
 }
 
 type messageRow struct {
-	id, sessionID, role                     string
+	id, sessionID, role, source              string
 	content, toolCalls, toolCallID, reasoning sql.NullString
 	createdAt                                int64
 }
@@ -30,7 +31,7 @@ func scanMessage(scanner interface {
 	if err := scanner.Scan(
 		&row.id, &row.sessionID, &row.role,
 		&row.content, &row.toolCalls, &row.toolCallID, &row.reasoning,
-		&row.createdAt,
+		&row.createdAt, &row.source,
 	); err != nil {
 		return Message{}, err
 	}
@@ -39,6 +40,7 @@ func scanMessage(scanner interface {
 		SessionID: row.sessionID,
 		Role:      row.role,
 		CreatedAt: row.createdAt,
+		Source:    row.source,
 	}
 	if row.content.Valid {
 		v := row.content.String
@@ -70,8 +72,8 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 		return err
 	}
 	stmt, err := tx.PrepareContext(ctx,
-		`INSERT INTO messages (id, session_id, role, content, tool_calls, tool_call_id, reasoning, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		`INSERT INTO messages (id, session_id, role, content, tool_calls, tool_call_id, reasoning, created_at, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -83,8 +85,12 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 		if ts == 0 {
 			ts = now
 		}
+		source := m.Source
+		if source == "" {
+			source = "user"
+		}
 		if _, err := stmt.ExecContext(ctx,
-			m.ID, m.SessionID, m.Role, m.Content, m.ToolCalls, m.ToolCallID, m.Reasoning, ts,
+			m.ID, m.SessionID, m.Role, m.Content, m.ToolCalls, m.ToolCallID, m.Reasoning, ts, source,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -95,7 +101,7 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 
 func (d *DB) ListMessagesBySession(ctx context.Context, sessionID string) ([]Message, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT id, session_id, role, content, tool_calls, tool_call_id, reasoning, created_at
+		`SELECT id, session_id, role, content, tool_calls, tool_call_id, reasoning, created_at, COALESCE(source, 'user')
 		 FROM messages WHERE session_id = ? ORDER BY ROWID ASC`, sessionID)
 	if err != nil {
 		return nil, err

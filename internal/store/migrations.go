@@ -66,6 +66,30 @@ var migrations = []string{
 		version INTEGER PRIMARY KEY,
 		applied_at INTEGER NOT NULL
 	);`,
+	// 2: scheduled tasks
+	`CREATE TABLE IF NOT EXISTS scheduled_tasks (
+		id          TEXT PRIMARY KEY,
+		name        TEXT NOT NULL,
+		cron_expr   TEXT,
+		once_at     INTEGER,
+		session_id  TEXT NOT NULL,
+		enabled     INTEGER DEFAULT 1,
+		created_by  TEXT,
+		cluster_id  TEXT,
+		created_at  INTEGER,
+		next_run    INTEGER,
+		last_run    INTEGER,
+		run_count   INTEGER DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS scheduled_runs (
+		id      TEXT PRIMARY KEY,
+		task_id TEXT REFERENCES scheduled_tasks(id) ON DELETE CASCADE,
+		run_at  INTEGER,
+		status  TEXT,
+		error   TEXT
+	);`,
+	// 3: add source column to messages (for existing dbs created before migration 1)
+	`ALTER TABLE messages ADD COLUMN source TEXT DEFAULT 'user';`,
 }
 
 func (d *DB) Migrate() error {
