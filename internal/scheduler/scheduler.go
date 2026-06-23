@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,22 +18,20 @@ import (
 // "scheduled" message to the session and calls the agent runner so the
 // result appears in the chat.
 type Scheduler struct {
-	store        *store.DB
+	store         *store.DB
 	runnerFactory any // func(sessionID, clusterID) any
-	sessionMgr   any // sessionManager interface{}
-	cron         *cron.Cron
-	entries      map[cron.EntryID]string
-	mu           sync.Mutex
+	cron          *cron.Cron
+	entries       map[cron.EntryID]string
+	mu            sync.Mutex
 }
 
 // NewScheduler creates a background scheduler.
-func NewScheduler(db *store.DB, runnerFactory any, sessionMgr any) *Scheduler {
+func NewScheduler(db *store.DB, runnerFactory any) *Scheduler {
 	return &Scheduler{
-		store:        db,
+		store:         db,
 		runnerFactory: runnerFactory,
-		sessionMgr:   sessionMgr,
-		cron:         cron.New(cron.WithSeconds()),
-		entries:      map[cron.EntryID]string{},
+		cron:          cron.New(cron.WithSeconds()),
+		entries:       map[cron.EntryID]string{},
 	}
 }
 
@@ -87,7 +86,16 @@ func (s *Scheduler) scheduleTaskLocked(t *store.ScheduledTask) {
 	}
 	var spec string
 	if t.CronExpr != nil {
-		spec = *t.CronExpr
+		expr := *t.CronExpr
+		// Prepend "0 " for standard 5-field expressions
+		// (minute hour day month weekday) so they become 6-field
+		// (second minute hour day month weekday) as required by WithSeconds().
+		// Special expressions starting with @ are passed through.
+		if strings.HasPrefix(expr, "@") {
+			spec = expr
+		} else {
+			spec = "0 " + expr
+		}
 	} else {
 		spec = "@every 1s"
 	}
@@ -139,23 +147,32 @@ func (s *Scheduler) trigger(ctx context.Context, t *store.ScheduledTask) error {
 	if err := s.store.CreateScheduledRun(ctx, run); err != nil {
 		return err
 	}
-	userMsg := "Scheduled task: " + t.Name
+	userMsg := t.Prompt
 	msg := store.Message{
 		ID:        uuid.NewString(),
 		SessionID: t.SessionID,
-		Role:     "user",
-		Content:  &userMsg,
-		Source:   "scheduled",
+		Role:      "user",
+		Content:   &userMsg,
+		Source:    "scheduled",
 	}
 	if err := s.store.BatchInsertMessages(ctx, []store.Message{msg}); err != nil {
 		s.store.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err
 	}
+	// Use the session's cluster_id (task.ClusterID is rarely set;
+	// session.ClusterID is the source of truth for the cluster the
+	// user is operating against).
+	session, err := s.store.GetSession(ctx, t.SessionID)
+	if err != nil {
+		s.store.UpdateScheduledRun(ctx, runID, "failed", err)
+		return err
+	}
 	clusterID := ""
-	if t.ClusterID != nil {
-		clusterID = *t.ClusterID
+	if session.ClusterID != nil {
+		clusterID = *session.ClusterID
 	}
 	runner := s.runnerFactory.(func(string, string) any)(t.SessionID, clusterID)
+	runner.(interface{ SetSession(string, string) }).SetSession(t.SessionID, clusterID)
 	if err := runner.(interface{ Run(context.Context, string) error }).Run(ctx, userMsg); err != nil {
 		s.store.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err

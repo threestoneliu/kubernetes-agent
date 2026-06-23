@@ -2,11 +2,12 @@ import React, { useState } from 'react'
 import { ChatView } from './views/ChatView'
 import { ClusterView } from './views/ClusterView'
 import { PolicyView } from './views/PolicyView'
+import { ScheduledTasksView } from './views/ScheduledTasksView'
 import { ErrorToast } from './components/ErrorToast'
 import { ToastProvider, useToast } from './components/ToastProvider'
 import { ThemeProvider, useTheme } from './contexts/ThemeContext'
 
-type View = 'chat' | 'clusters' | 'policies'
+type View = 'chat' | 'clusters' | 'policies' | 'tasks'
 
 function Shell() {
   const [view, setView] = useState<View>('chat')
@@ -38,6 +39,12 @@ function Shell() {
           >
             策略
           </button>
+          <button
+            className={`nav-tab ${view === 'tasks' ? 'active' : ''}`}
+            onClick={() => setView('tasks')}
+          >
+            定时任务
+          </button>
         </nav>
         <div className="header-actions">
           <button className="icon-btn" onClick={toggle} title="切换主题">
@@ -53,6 +60,7 @@ function Shell() {
           {view === 'chat' && <ChatView />}
           {view === 'clusters' && <ClusterView />}
           {view === 'policies' && <PolicyView />}
+          {view === 'tasks' && <ScheduledTasksView />}
         </main>
       </div>
       {toast && <ErrorToast message={toast} onDismiss={dismiss} />}

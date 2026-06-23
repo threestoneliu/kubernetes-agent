@@ -11,6 +11,7 @@ import (
 type ScheduledTask struct {
 	ID        string
 	Name      string
+	Prompt    string // instruction to execute when triggered
 	CronExpr  *string // nil = one-shot task
 	OnceAt    *int64 // UNIX timestamp for one-shot tasks
 	SessionID string
@@ -42,9 +43,9 @@ func (d *DB) CreateScheduledTask(ctx context.Context, t *ScheduledTask) error {
 	}
 	_, err := d.ExecContext(ctx,
 		`INSERT INTO scheduled_tasks
-		 (id, name, cron_expr, once_at, session_id, enabled, created_by, cluster_id, created_at, next_run, last_run, run_count)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.Name, t.CronExpr, t.OnceAt, t.SessionID,
+		 (id, name, prompt, cron_expr, once_at, session_id, enabled, created_by, cluster_id, created_at, next_run, last_run, run_count)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.Name, t.Prompt, t.CronExpr, t.OnceAt, t.SessionID,
 		btof(t.Enabled), t.CreatedBy, t.ClusterID, t.CreatedAt,
 		t.NextRun, t.LastRun, t.RunCount)
 	return err
@@ -57,12 +58,12 @@ func (d *DB) GetScheduledTasks(ctx context.Context, sessionID string) ([]*Schedu
 	var err error
 	if sessionID == "" {
 		rows, err = d.QueryContext(ctx,
-			`SELECT id, name, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
+			`SELECT id, name, prompt, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
 			        created_at, next_run, last_run, run_count
 			 FROM scheduled_tasks ORDER BY created_at DESC`)
 	} else {
 		rows, err = d.QueryContext(ctx,
-			`SELECT id, name, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
+			`SELECT id, name, prompt, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
 			        created_at, next_run, last_run, run_count
 			 FROM scheduled_tasks WHERE session_id = ? ORDER BY created_at DESC`, sessionID)
 	}
@@ -76,7 +77,7 @@ func (d *DB) GetScheduledTasks(ctx context.Context, sessionID string) ([]*Schedu
 // GetScheduledTask returns a single task by ID.
 func (d *DB) GetScheduledTask(ctx context.Context, id string) (*ScheduledTask, error) {
 	row := d.QueryRowContext(ctx,
-		`SELECT id, name, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
+		`SELECT id, name, prompt, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
 		        created_at, next_run, last_run, run_count
 		 FROM scheduled_tasks WHERE id = ?`, id)
 	t, err := scanScheduledTask(row)
@@ -89,7 +90,7 @@ func (d *DB) GetScheduledTask(ctx context.Context, id string) (*ScheduledTask, e
 // GetEnabledScheduledTasks returns all enabled tasks for scheduler restore.
 func (d *DB) GetEnabledScheduledTasks(ctx context.Context) ([]*ScheduledTask, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT id, name, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
+		`SELECT id, name, prompt, cron_expr, once_at, session_id, enabled, created_by, cluster_id,
 		        created_at, next_run, last_run, run_count
 		 FROM scheduled_tasks WHERE enabled = 1`)
 	if err != nil {
@@ -162,16 +163,16 @@ func scanScheduledTasks(rows *sql.Rows) ([]*ScheduledTask, error) {
 
 func scanScheduledTask(scanner interface{ Scan(...any) error }) (*ScheduledTask, error) {
 	var (
-		id, name, sessionID, createdBy           string
-		cronExpr                            sql.NullString
-		onceAt, nextRun, lastRun            sql.NullInt64
-		clusterID                           sql.NullString
-		enabled                             int
-		createdAt                           int64
-		runCount                            int
+		id, name, prompt, sessionID, createdBy string
+		cronExpr                 sql.NullString
+		onceAt, nextRun, lastRun sql.NullInt64
+		clusterID                sql.NullString
+		enabled                  int
+		createdAt                int64
+		runCount                 int
 	)
 	if err := scanner.Scan(
-		&id, &name, &cronExpr, &onceAt, &sessionID, &enabled,
+		&id, &name, &prompt, &cronExpr, &onceAt, &sessionID, &enabled,
 		&createdBy, &clusterID, &createdAt, &nextRun, &lastRun, &runCount,
 	); err != nil {
 		return nil, err
@@ -179,6 +180,7 @@ func scanScheduledTask(scanner interface{ Scan(...any) error }) (*ScheduledTask,
 	t := &ScheduledTask{
 		ID:        id,
 		Name:      name,
+		Prompt:    prompt,
 		SessionID: sessionID,
 		Enabled:   enabled == 1,
 		CreatedBy: createdBy,

@@ -60,7 +60,24 @@ export type Message = {
   tool_calls?: string | null
   tool_call_id?: string | null
   reasoning?: string | null
+  source?: string | null
   created_at: number
+}
+
+export type ScheduledTask = {
+  id: string
+  name: string
+  prompt: string
+  cron_expr?: string | null
+  once_at?: number | null
+  session_id: string
+  enabled: boolean
+  cluster_id?: string | null
+  created_by: string
+  created_at: number
+  next_run?: number | null
+  last_run?: number | null
+  run_count: number
 }
 
 // --- Helpers ---
@@ -191,4 +208,37 @@ export type ResumeInput =
 
 export async function resumeSession(id: string, input: ResumeInput): Promise<void> {
   await request<void>('POST', `/api/sessions/${encodeURIComponent(id)}/resume`, input)
+}
+
+// --- scheduled tasks ---
+
+export interface CreateScheduledTaskInput {
+  name: string
+  prompt: string
+  cron_expr?: string
+  once_at?: number
+  session_id: string
+  cluster_id?: string
+  created_by: string
+}
+
+export function listScheduledTasks(sessionId?: string): Promise<ScheduledTask[]> {
+  const params = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  return request<ScheduledTask[]>(`GET`, `/api/scheduled-tasks${params}`)
+}
+
+export function createScheduledTask(input: CreateScheduledTaskInput): Promise<ScheduledTask> {
+  return request<ScheduledTask>('POST', '/api/scheduled-tasks', input)
+}
+
+export async function deleteScheduledTask(id: string): Promise<void> {
+  await request<void>('DELETE', `/api/scheduled-tasks/${encodeURIComponent(id)}`)
+}
+
+export function updateScheduledTask(id: string, input: { enabled?: boolean; name?: string; cron_expr?: string }): Promise<ScheduledTask> {
+  return request<ScheduledTask>('PATCH', `/api/scheduled-tasks/${encodeURIComponent(id)}`, input)
+}
+
+export async function runScheduledTask(id: string): Promise<void> {
+  await request<void>('POST', `/api/scheduled-tasks/${encodeURIComponent(id)}/run`)
 }

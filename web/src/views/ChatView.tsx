@@ -22,7 +22,7 @@ type AssistantBlock =
   | { kind: 'tool'; id: string; name: string; input: unknown; result?: { ok: true; output: unknown } | { ok: false; error: string } }
 
 type Msg =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; source?: string }
   | { kind: 'assistant'; id: string; blocks: AssistantBlock[] }
   | { kind: 'system'; id: string; text: string }
   | { kind: 'tool_result'; id: string; toolName: string; toolCallId: string; output: unknown; isError: boolean }
@@ -40,7 +40,7 @@ function isObject(v: unknown): v is Record<string, unknown> {
 // reasoning/text/tool_calls are already merged in the backend per turn.
 function mToMsg(m: import('../api').Message): Msg {
   if (m.role === 'user') {
-    return { kind: 'user', id: m.id, text: m.content ?? '' }
+    return { kind: 'user', id: m.id, text: m.content ?? '', source: m.source ?? undefined }
   }
   if (m.role === 'tool') {
     let parsed: { tool_call_id?: string; name?: string; output?: unknown; is_error?: boolean } = {}
@@ -115,7 +115,7 @@ function preprocessMessages(raw: import('../api').Message[]): Msg[] {
     if (m.role === 'user') {
       lastAssistant.msg = null
       lastAssistant.toolMap = new Map()
-      out.push({ kind: 'user', id: m.id, text: m.content ?? '' })
+      out.push({ kind: 'user', id: m.id, text: m.content ?? '', source: m.source ?? undefined })
       continue
     }
 
@@ -640,7 +640,12 @@ function Bubble({ msg }: { msg: Msg }) {
   if (msg.kind === 'user') {
     return (
       <div className="msg user">
-        <div className="bubble user">{msg.text}</div>
+        <div className="bubble user">
+          {msg.source === 'scheduled' && (
+            <span title="定时任务触发" style={{ marginRight: 6, fontSize: 11, opacity: 0.7 }}>🔄</span>
+          )}
+          {msg.text}
+        </div>
       </div>
     )
   }

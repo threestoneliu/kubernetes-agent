@@ -90,6 +90,8 @@ var migrations = []string{
 	);`,
 	// 3: add source column to messages (for existing dbs created before migration 1)
 	`ALTER TABLE messages ADD COLUMN source TEXT DEFAULT 'user';`,
+	// 4: add prompt column to scheduled_tasks
+	`ALTER TABLE scheduled_tasks ADD COLUMN prompt TEXT NOT NULL DEFAULT '';`,
 }
 
 func (d *DB) Migrate() error {

@@ -58,12 +58,15 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 	return []llm.Tool{
 		{
 			Name:        "k8s_get",
-			Description: "Fetch a single Kubernetes resource by name. Returns the resource as a JSON object.",
+			Description: "Fetch a single Kubernetes resource by name. Returns the resource as a JSON object.\n\nREQUIRED: You MUST always specify both `resource` (e.g. pods, services, deployments) and `name` (the resource name).",
 			InputSchema: getSchema,
 			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
 				var in k8s.GetInput
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if in.Resource == "" || in.Name == "" {
+					return nil, fmt.Errorf("both resource and name are required (e.g. resource='pods' name='my-pod')")
 				}
 				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.Get(ctx, d.Factory, in)
@@ -75,12 +78,15 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 		},
 		{
 			Name:        "k8s_list",
-			Description: "List Kubernetes resources in table format (kubectl get style). Columns are provided by the API server. Empty namespace means all namespaces.",
+			Description: "List Kubernetes resources in table format (kubectl get style). Columns are provided by the API server. Empty namespace means all namespaces.\n\nREQUIRED: You MUST always specify `resource` (the lowercase plural API resource name, e.g. pods, services, deployments). Example: {\"resource\": \"pods\", \"namespace\": \"default\"}",
 			InputSchema: listSchema,
 			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
 				var in k8s.ListInput
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if in.Resource == "" {
+					return nil, fmt.Errorf("resource is required — you must pass the lowercase plural API resource name (e.g. {\"resource\": \"pods\"})")
 				}
 				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.ListTable(ctx, d.Factory, in)
@@ -92,12 +98,15 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 		},
 		{
 			Name:        "k8s_describe",
-			Description: "Describe a Kubernetes resource: returns the object, related events, owner references, and diagnosis hints derived from conditions / container state.",
+			Description: "Describe a Kubernetes resource: returns the object, related events, owner references, and diagnosis hints derived from conditions / container state.\n\nREQUIRED: You MUST always specify both `resource` (e.g. pods, deployments) and `name` (the resource name).",
 			InputSchema: describeSchema,
 			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
 				var in k8s.DescribeInput
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if in.Resource == "" || in.Name == "" {
+					return nil, fmt.Errorf("both resource and name are required (e.g. resource='pods' name='my-pod')")
 				}
 				d.fillClusterID(&in.ClusterID)
 				out, err := k8s.Describe(ctx, d.Factory, in)

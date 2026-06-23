@@ -55,7 +55,7 @@ func run() error {
 	schedRunnerFactory := func(sessionID, clusterID string) any {
 		return deps.RunnerFactory.NewRunner(sessionID, clusterID)
 	}
-	deps.Scheduler = scheduler.NewScheduler(db, schedRunnerFactory, deps.Sessions)
+	deps.Scheduler = scheduler.NewScheduler(db, schedRunnerFactory)
 	// Inject scheduler into runner factory so tools can access it.
 	deps.RunnerFactory.(*runnerFactory).scheduler = deps.Scheduler
 

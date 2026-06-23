@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/threestoneliu/kubernetes-agent/internal/agent"
+	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 )
 
@@ -17,6 +20,7 @@ import (
 
 type createScheduledTaskRequest struct {
 	Name      string  `json:"name"`
+	Prompt    string  `json:"prompt"`
 	CronExpr  *string `json:"cron_expr,omitempty"`
 	OnceAt    *int64  `json:"once_at,omitempty"`
 	SessionID string  `json:"session_id"`
@@ -59,6 +63,10 @@ func createScheduledTaskHandler(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "validation", "name and session_id are required", false)
 			return
 		}
+		if req.Prompt == "" {
+			writeError(w, http.StatusBadRequest, "validation", "prompt is required", false)
+			return
+		}
 		if req.CronExpr == nil && req.OnceAt == nil {
 			writeError(w, http.StatusBadRequest, "validation", "either cron_expr or once_at is required", false)
 			return
@@ -74,6 +82,7 @@ func createScheduledTaskHandler(d Deps) http.HandlerFunc {
 		task := &store.ScheduledTask{
 			ID:        uuid.NewString(),
 			Name:      req.Name,
+			Prompt:    req.Prompt,
 			CronExpr:  req.CronExpr,
 			OnceAt:    req.OnceAt,
 			SessionID: req.SessionID,
@@ -201,7 +210,7 @@ func triggerTask(ctx context.Context, d Deps, t *store.ScheduledTask) error {
 	if err := d.DB.CreateScheduledRun(ctx, run); err != nil {
 		return err
 	}
-	userMsg := "Scheduled task: " + t.Name
+	userMsg := t.Prompt
 	msg := store.Message{
 		ID:        uuid.NewString(),
 		SessionID: t.SessionID,
@@ -213,11 +222,25 @@ func triggerTask(ctx context.Context, d Deps, t *store.ScheduledTask) error {
 		d.DB.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err
 	}
+	// Use the session's cluster_id so scheduled tasks run against
+	// the same cluster the session is bound to.
+	session, err := d.DB.GetSession(ctx, t.SessionID)
+	if err != nil {
+		d.DB.UpdateScheduledRun(ctx, runID, "failed", err)
+		return err
+	}
 	clusterID := ""
-	if t.ClusterID != nil {
-		clusterID = *t.ClusterID
+	if session.ClusterID != nil {
+		clusterID = *session.ClusterID
 	}
 	runner := d.RunnerFactory.NewRunner(t.SessionID, clusterID)
+	runner.Events = make(chan agent.Event, 64)
+	runner.Session = agent.NewSession(t.SessionID)
+	if session.ClusterID != nil {
+		runner.Session.ClusterID = *session.ClusterID
+		runner.SystemPrompt = llm.SystemPrompt +
+			fmt.Sprintf("\n\n当前 session 绑定的 cluster_id: %s。所有 k8s_* 工具调用 MUST 使用此 UUID 作为 cluster_id 参数。", *session.ClusterID)
+	}
 	if err := runner.Run(ctx, userMsg); err != nil {
 		d.DB.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err
@@ -239,6 +262,7 @@ func triggerTask(ctx context.Context, d Deps, t *store.ScheduledTask) error {
 type scheduledTaskResponse struct {
 	ID        string  `json:"id"`
 	Name      string  `json:"name"`
+	Prompt    string  `json:"prompt"`
 	CronExpr  *string `json:"cron_expr,omitempty"`
 	OnceAt    *int64  `json:"once_at,omitempty"`
 	SessionID string  `json:"session_id"`
@@ -255,6 +279,7 @@ func toResponse(t *store.ScheduledTask) scheduledTaskResponse {
 	return scheduledTaskResponse{
 		ID:        t.ID,
 		Name:      t.Name,
+		Prompt:    t.Prompt,
 		CronExpr:  t.CronExpr,
 		OnceAt:    t.OnceAt,
 		SessionID: t.SessionID,

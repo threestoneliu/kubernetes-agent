@@ -92,12 +92,13 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  overflow: visible;
+  overflow: hidden;
   position: relative;
   z-index: 10;
   padding: 16px 0;
   gap: 8px;
   margin-right: 16px;
+  height: 100%;
 }
 
 /* Left nav — DEPRECATED, navigation moved to header */
@@ -409,7 +410,7 @@ textarea {
   gap: 3px;
   overflow-y: auto;
   flex: 1;
-  overflow: visible;
+  max-height: calc(100vh - 220px);
 }
 
 .session-row {

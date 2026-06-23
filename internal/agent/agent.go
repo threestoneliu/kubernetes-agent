@@ -60,6 +60,19 @@ type Runner struct {
 	Now func() time.Time
 }
 
+// SetSession sets the Session and Events channel needed by the
+// scheduler's trigger path. It is separate from Runner.Run so the
+// scheduler (which cannot import the agent package) can inject a
+// session without going through the chat handler that normally wires
+// both fields.
+func (r *Runner) SetSession(sessionID, clusterID string) {
+	r.Session = &Session{
+		ID:        sessionID,
+		ClusterID: clusterID,
+	}
+	r.Events = make(chan Event, 64)
+}
+
 // transcriptMessage is the agent loop's view of one entry in the chat
 // history. We keep the full ContentPart slice (text, tool_call,
 // tool_result) so the runner can reconstruct the full Message that
