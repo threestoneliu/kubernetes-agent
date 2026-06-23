@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
+	"github.com/threestoneliu/kubernetes-agent/internal/scheduler"
 	"github.com/threestoneliu/kubernetes-agent/internal/skills"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 	"github.com/threestoneliu/kubernetes-agent/internal/tools/agent"
@@ -28,6 +32,7 @@ type ToolDeps struct {
 	Session          *Session
 	FSReadAllowedDir string // Directory for fs_read tool to restrict access
 	Skills           []*skills.SkillEntry // Loaded skills for load_skill tool
+	Scheduler        *scheduler.Scheduler
 	// Emit is called by handlers that need to surface side-channel
 	// events before returning their tool output. In particular,
 	// plan_write emits PlanReady + PlanAwaitingConfirm via Emit
@@ -295,6 +300,92 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				return tool.Handle(ctx, call.Input)
 			},
 		},
+		// schedule_task
+		{
+			Name:        "schedule_task",
+			Description: "Create a scheduled task that fires based on a cron expression or one-shot timestamp.",
+			InputSchema: scheduleTaskSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in scheduleTaskInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if in.SessionID == "" {
+					return nil, fmt.Errorf("session_id is required")
+				}
+				if in.CronExpr == nil && in.OnceAt == nil {
+					return nil, fmt.Errorf("either cron_expr or once_at is required")
+				}
+				now := time.Now().Unix()
+				var nextRun *int64
+				if in.OnceAt != nil {
+					nextRun = in.OnceAt
+				}
+				task := &store.ScheduledTask{
+					ID:        uuid.NewString(),
+					Name:      in.Name,
+					CronExpr:  in.CronExpr,
+					OnceAt:    in.OnceAt,
+					SessionID: in.SessionID,
+					ClusterID: in.ClusterID,
+					CreatedBy: "llm",
+					Enabled:   true,
+					CreatedAt: now,
+					NextRun:   nextRun,
+				}
+				if err := d.Store.CreateScheduledTask(ctx, task); err != nil {
+					return nil, err
+				}
+				if d.Scheduler != nil {
+					d.Scheduler.ScheduleTask(task)
+				}
+				return json.Marshal(map[string]any{"task_id": task.ID, "next_run": task.NextRun})
+			},
+		},
+		// get_scheduled_tasks
+		{
+			Name:        "get_scheduled_tasks",
+			Description: "List all scheduled tasks.",
+			InputSchema: getScheduledTasksSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				tasks, err := d.Store.GetScheduledTasks(ctx, "")
+				if err != nil {
+					return nil, err
+				}
+				out := make([]map[string]any, 0, len(tasks))
+				for _, t := range tasks {
+					out = append(out, map[string]any{
+						"id": t.ID, "name": t.Name, "cron_expr": t.CronExpr,
+						"once_at": t.OnceAt, "session_id": t.SessionID,
+						"enabled": t.Enabled, "next_run": t.NextRun,
+						"last_run": t.LastRun, "run_count": t.RunCount,
+					})
+				}
+				return json.Marshal(out)
+			},
+		},
+		// delete_scheduled_task
+		{
+			Name:        "delete_scheduled_task",
+			Description: "Delete a scheduled task by ID.",
+			InputSchema: deleteScheduledTaskSchema,
+			Handler: func(ctx context.Context, call llm.ToolCall) ([]byte, error) {
+				var in deleteScheduledTaskInput
+				if err := json.Unmarshal(call.Input, &in); err != nil {
+					return nil, fmt.Errorf("invalid input: %w", err)
+				}
+				if in.TaskID == "" {
+					return nil, fmt.Errorf("task_id is required")
+				}
+				if d.Scheduler != nil {
+					d.Scheduler.UnscheduleTask(in.TaskID)
+				}
+				if err := d.Store.DeleteScheduledTask(ctx, in.TaskID); err != nil {
+					return nil, err
+				}
+				return json.Marshal(map[string]bool{"success": true})
+			},
+		},
 	}
 }
 
@@ -456,6 +547,44 @@ var askUserSchema = map[string]any{
 	},
 	"required": []string{"question"},
 }
+
+	var scheduleTaskSchema = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":       map[string]any{"type": "string", "description": "[REQUIRED] task name"},
+			"cron_expr":  map[string]any{"type": "string", "description": "cron expression (e.g. \"0 9 * * *\")"},
+			"once_at":    map[string]any{"type": "number", "description": "UNIX timestamp for one-shot execution"},
+			"session_id": map[string]any{"type": "string", "description": "[REQUIRED] session to send the scheduled message to"},
+			"cluster_id": map[string]any{"type": "string", "description": "cluster id for the runner"},
+		},
+		"required": []string{"name", "session_id"},
+	}
+
+	type scheduleTaskInput struct {
+		Name      string
+		CronExpr  *string
+		OnceAt    *int64
+		SessionID string
+		ClusterID *string
+	}
+
+	var getScheduledTasksSchema = map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+
+	var deleteScheduledTaskSchema = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{"type": "string", "description": "[REQUIRED] task id to delete"},
+		},
+		"required": []string{"task_id"},
+	}
+
+	type deleteScheduledTaskInput struct {
+		TaskID string
+	}
+
 
 // AllToolNames returns the canonical list of tool names registered by
 // RegisterK8sTools. Used by tests.

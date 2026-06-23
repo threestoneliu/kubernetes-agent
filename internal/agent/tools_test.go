@@ -46,9 +46,9 @@ func TestAllToolNames(t *testing.T) {
 }
 
 func TestRegisterK8sTools_HandlerCount(t *testing.T) {
-	// 6 k8s tools + fs_read + load_skill
+	// 6 k8s tools + fs_read + load_skill + schedule_task + get_scheduled_tasks + delete_scheduled_tasks
 	tools := RegisterK8sTools(&ToolDeps{})
-	assert.Len(t, tools, 8)
+	assert.Len(t, tools, 11)
 	for _, tool := range tools {
 		assert.NotEmpty(t, tool.Name)
 		assert.NotEmpty(t, tool.Description)

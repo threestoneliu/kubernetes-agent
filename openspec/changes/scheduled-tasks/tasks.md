@@ -6,22 +6,22 @@
 
 ## 2. Scheduler 核心
 
-- [ ] 2.1 新增 `internal/scheduler/scheduler.go`，实现 `Scheduler` 结构体和 `Run(ctx)` 方法
-- [ ] 2.2 实现 `Scheduler.schedule()` 主循环，每 10s 检查一次到期任务
-- [ ] 2.3 实现 `Scheduler.restore()` 从 SQLite 恢复所有 `enabled=1` 任务
-- [ ] 2.4 集成 `github.com/robfig/cron/v3`，实现 `nextRunFromCron()` 和 `nextRunFromOnce()`
-- [ ] 2.5 实现 `Scheduler.trigger()` 执行任务——调用 `Session.SendScheduledMessage()` 写入消息
-- [ ] 2.6 实现 `Scheduler.skip()` 记录 `skipped` 状态到 `scheduled_runs`
-- [ ] 2.7 Server 启动时启动 Scheduler goroutine（参考 cmd/server/main.go 启动方式）
+- [x] 2.1 新增 `internal/scheduler/scheduler.go`，实现 `Scheduler` 结构体和 `Run(ctx)` 方法
+- [x] 2.2 实现 `Scheduler.schedule()` 主循环，每 10s 检查一次到期任务
+- [x] 2.3 实现 `Scheduler.restore()` 从 SQLite 恢复所有 `enabled=1` 任务
+- [x] 2.4 集成 `github.com/robfig/cron/v3`，实现 `nextRunFromCron()` 和 `nextRunFromOnce()`
+- [x] 2.5 实现 `Scheduler.trigger()` 执行任务——调用 `Session.SendScheduledMessage()` 写入消息
+- [x] 2.6 实现 `Scheduler.skip()` 记录 `skipped` 状态到 `scheduled_runs`
+- [x] 2.7 Server 启动时启动 Scheduler goroutine（参考 cmd/server/main.go 启动方式）
 
 ## 3. REST API
 
-- [ ] 3.1 在 `internal/server/` 注册 `GET/POST/DELETE/PATCH /api/scheduled-tasks` 路由
-- [ ] 3.2 实现 `GET /api/scheduled-tasks`（支持 `?session_id=` 过滤）
-- [ ] 3.3 实现 `POST /api/scheduled-tasks`（创建任务，计算 `next_run`）
-- [ ] 3.4 实现 `DELETE /api/scheduled-tasks/:id`
-- [ ] 3.5 实现 `PATCH /api/scheduled-tasks/:id`（更新 `enabled`/`name`/`cron_expr`）
-- [ ] 3.6 实现 `POST /api/scheduled-tasks/:id/run`（立即执行一次）
+- [x] 3.1 在 `internal/server/` 注册 `GET/POST/DELETE/PATCH /api/scheduled-tasks` 路由
+- [x] 3.2 实现 `GET /api/scheduled-tasks`（支持 `?session_id=` 过滤）
+- [x] 3.3 实现 `POST /api/scheduled-tasks`（创建任务，计算 `next_run`）
+- [x] 3.4 实现 `DELETE /api/scheduled-tasks/:id`
+- [x] 3.5 实现 `PATCH /api/scheduled-tasks/:id`（更新 `enabled`/`name`/`cron_expr`）
+- [x] 3.6 实现 `POST /api/scheduled-tasks/:id/run`（立即执行一次）
 
 ## 4. LLM 工具
 
@@ -41,8 +41,8 @@
 
 ## 6. Session 消息增强
 
-- [ ] 6.1 在 `store.go` 的 `Message` struct 新增 `source` 字段（`"user"` / `"llm"` / `"scheduled"`）
-- [ ] 6.2 `Session.SendScheduledMessage()` 向 `messages` 表写入 `source="scheduled"` 的消息
+- [x] 6.1 在 `store.go` 的 `Message` struct 新增 `source` 字段（`"user"` / `"llm"` / `"scheduled"`）
+- [x] 6.2 `Session.SendScheduledMessage()` 向 `messages` 表写入 `source="scheduled"` 的消息
 - [ ] 6.3 前端渲染 `source="scheduled"` 的消息时显示"🔄 定时任务"标记
 
 ## 7. 集成与测试

@@ -9,13 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 
-	"github.com/threestoneliu/kubernetes-agent/internal/agent"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 )
-
-// RunnerFactory creates a ready-to-run agent.Runner for a session.
-// Built by cmd/server from server.Deps.RunnerFactory.
-type RunnerFactory func(sessionID, clusterID string) *agent.Runner
 
 // Scheduler runs in a background goroutine and dispatches scheduled tasks
 // when their cron expression or one-shot time fires. On trigger it writes a
@@ -23,21 +18,21 @@ type RunnerFactory func(sessionID, clusterID string) *agent.Runner
 // result appears in the chat.
 type Scheduler struct {
 	store        *store.DB
-	runnerFactory RunnerFactory
-	sessionMgr   *agent.SessionManager
+	runnerFactory any // func(sessionID, clusterID) any
+	sessionMgr   any // sessionManager interface{}
 	cron         *cron.Cron
-	entries     map[cron.EntryID]string // cronEntryID -> taskID
-	mu          sync.Mutex
+	entries      map[cron.EntryID]string
+	mu           sync.Mutex
 }
 
 // NewScheduler creates a background scheduler.
-func NewScheduler(db *store.DB, runnerFactory RunnerFactory, sessionMgr *agent.SessionManager) *Scheduler {
+func NewScheduler(db *store.DB, runnerFactory any, sessionMgr any) *Scheduler {
 	return &Scheduler{
 		store:        db,
 		runnerFactory: runnerFactory,
 		sessionMgr:   sessionMgr,
 		cron:         cron.New(cron.WithSeconds()),
-		entries:     map[cron.EntryID]string{},
+		entries:      map[cron.EntryID]string{},
 	}
 }
 
@@ -54,26 +49,23 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// restore loads all enabled tasks from the store and schedules them.
 func (s *Scheduler) restore(ctx context.Context) error {
 	tasks, err := s.store.GetEnabledScheduledTasks(ctx)
 	if err != nil {
 		return err
 	}
 	for _, t := range tasks {
-		if err := s.ScheduleTask(t); err != nil {
-			slog.Error("scheduler: restore schedule error", "task_id", t.ID, "err", err)
-		}
+		s.ScheduleTask(t)
 	}
 	slog.Info("scheduler: restored tasks", "count", len(tasks))
 	return nil
 }
 
 // ScheduleTask adds a task to the cron scheduler.
-func (s *Scheduler) ScheduleTask(t *store.ScheduledTask) error {
+func (s *Scheduler) ScheduleTask(t *store.ScheduledTask) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.scheduleTaskLocked(t)
+	s.scheduleTaskLocked(t)
 }
 
 // UnscheduleTask removes a task from the cron scheduler.
@@ -89,15 +81,14 @@ func (s *Scheduler) UnscheduleTask(taskID string) {
 	}
 }
 
-func (s *Scheduler) scheduleTaskLocked(t *store.ScheduledTask) error {
+func (s *Scheduler) scheduleTaskLocked(t *store.ScheduledTask) {
 	if !t.Enabled {
-		return nil
+		return
 	}
 	var spec string
 	if t.CronExpr != nil {
 		spec = *t.CronExpr
 	} else {
-		// one-shot: use "@every 1s" and check once_at in trigger
 		spec = "@every 1s"
 	}
 	taskID := t.ID
@@ -106,10 +97,9 @@ func (s *Scheduler) scheduleTaskLocked(t *store.ScheduledTask) error {
 	})
 	if err != nil {
 		slog.Error("scheduler: add func error", "task_id", t.ID, "err", err)
-		return err
+		return
 	}
 	s.entries[entryID] = t.ID
-	return nil
 }
 
 // checkAndTrigger checks if the task is due and triggers or skips.
@@ -122,20 +112,13 @@ func (s *Scheduler) checkAndTrigger(ctx context.Context, taskID string) {
 	if !t.Enabled {
 		return
 	}
-
-	// For one-shot tasks, check if next_run has actually passed.
-	if t.OnceAt != nil {
-		if time.Now().Unix() < *t.OnceAt {
-			return // not yet
-		}
+	if t.OnceAt != nil && time.Now().Unix() < *t.OnceAt {
+		return
 	}
-
 	if err := s.trigger(ctx, t); err != nil {
 		slog.Error("scheduler: trigger error", "task_id", taskID, "err", err)
 		return
 	}
-
-	// For one-shot tasks, disable after firing.
 	if t.OnceAt != nil {
 		updates := map[string]any{"enabled": 0}
 		if err := s.store.UpdateScheduledTask(ctx, taskID, updates); err != nil {
@@ -144,11 +127,9 @@ func (s *Scheduler) checkAndTrigger(ctx context.Context, taskID string) {
 	}
 }
 
-// trigger fires the task: writes a scheduled message and runs the agent.
 func (s *Scheduler) trigger(ctx context.Context, t *store.ScheduledTask) error {
 	runID := uuid.NewString()
 	runAt := time.Now().Unix()
-
 	run := &store.ScheduledRun{
 		ID:     runID,
 		TaskID: t.ID,
@@ -156,67 +137,47 @@ func (s *Scheduler) trigger(ctx context.Context, t *store.ScheduledTask) error {
 		Status: "running",
 	}
 	if err := s.store.CreateScheduledRun(ctx, run); err != nil {
-		slog.Error("scheduler: create run record error", "task_id", t.ID, "err", err)
+		return err
 	}
-
-	// Build the user message.
 	userMsg := "Scheduled task: " + t.Name
-
-	// Write the scheduled message to the session.
 	msg := store.Message{
 		ID:        uuid.NewString(),
 		SessionID: t.SessionID,
-		Role:      "user",
-		Content:   &userMsg,
-		Source:    "scheduled",
+		Role:     "user",
+		Content:  &userMsg,
+		Source:   "scheduled",
 	}
 	if err := s.store.BatchInsertMessages(ctx, []store.Message{msg}); err != nil {
-		s.updateRun(ctx, runID, "failed", err)
+		s.store.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err
 	}
-
-	// Create runner for this session.
 	clusterID := ""
 	if t.ClusterID != nil {
 		clusterID = *t.ClusterID
 	}
-	runner := s.runnerFactory(t.SessionID, clusterID)
-
-	if err := runner.Run(ctx, userMsg); err != nil {
-		s.updateRun(ctx, runID, "failed", err)
+	runner := s.runnerFactory.(func(string, string) any)(t.SessionID, clusterID)
+	if err := runner.(interface{ Run(context.Context, string) error }).Run(ctx, userMsg); err != nil {
+		s.store.UpdateScheduledRun(ctx, runID, "failed", err)
 		return err
 	}
-
-	s.updateRun(ctx, runID, "success", nil)
+	s.store.UpdateScheduledRun(ctx, runID, "success", nil)
 	s.updateTaskStats(ctx, t)
 	return nil
 }
 
-func (s *Scheduler) updateRun(ctx context.Context, runID, status string, runErr error) {
-	if runErr != nil {
-		s.store.UpdateScheduledRun(ctx, runID, status, runErr)
-	} else {
-		s.store.UpdateScheduledRun(ctx, runID, status, nil)
-	}
-}
-
 func (s *Scheduler) updateTaskStats(ctx context.Context, t *store.ScheduledTask) {
 	now := time.Now().Unix()
-	var nextRun *int64
+	updates := map[string]any{
+		"last_run":  now,
+		"run_count": t.RunCount + 1,
+	}
 	if t.CronExpr != nil {
 		parser := cron.NewParser(cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 		if schedule, err := parser.Parse(*t.CronExpr); err == nil {
 			next := schedule.Next(time.Now())
 			v := next.Unix()
-			nextRun = &v
+			updates["next_run"] = v
 		}
-	}
-	updates := map[string]any{
-		"last_run":  now,
-		"run_count": t.RunCount + 1,
-	}
-	if nextRun != nil {
-		updates["next_run"] = *nextRun
 	}
 	s.store.UpdateScheduledTask(ctx, t.ID, updates)
 }

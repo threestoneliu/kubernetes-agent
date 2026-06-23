@@ -52,10 +52,12 @@ func run() error {
 	deps := buildDeps(cfg, db, aead)
 
 	// Build runner factory for the scheduler.
-	schedRunnerFactory := func(sessionID, clusterID string) *agent.Runner {
+	schedRunnerFactory := func(sessionID, clusterID string) any {
 		return deps.RunnerFactory.NewRunner(sessionID, clusterID)
 	}
 	deps.Scheduler = scheduler.NewScheduler(db, schedRunnerFactory, deps.Sessions)
+	// Inject scheduler into runner factory so tools can access it.
+	deps.RunnerFactory.(*runnerFactory).scheduler = deps.Scheduler
 
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	deps.LLM.Health = llm.PingAll(pingCtx, deps.LLM.Providers, 1)
@@ -193,6 +195,7 @@ type runnerFactory struct {
 	skillPromptBuilder *skills.PromptBuilder
 	fsReadAllowedDir  string
 	skillEntries      []*skills.SkillEntry
+	scheduler         *scheduler.Scheduler // set after construction to avoid circular deps
 }
 
 func newRunnerFactory(reg *llm.Registry, db *store.DB, factory k8s.ClientFactory, engine *policy.Engine, defaultName string, skillPromptBuilder *skills.PromptBuilder, fsReadAllowedDir string, skillEntries []*skills.SkillEntry) *runnerFactory {
