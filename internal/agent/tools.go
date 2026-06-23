@@ -573,11 +573,11 @@ var askUserSchema = map[string]any{
 	}
 
 	type scheduleTaskInput struct {
-		Name      string
-		CronExpr  *string
-		OnceAt    *int64
-		SessionID string
-		ClusterID *string
+		Name      string  `json:"name"`
+		CronExpr  *string `json:"cron_expr,omitempty"`
+		OnceAt    *int64  `json:"once_at,omitempty"`
+		SessionID string  `json:"session_id,omitempty"`
+		ClusterID *string `json:"cluster_id,omitempty"`
 	}
 
 	var getScheduledTasksSchema = map[string]any{
@@ -594,7 +594,7 @@ var askUserSchema = map[string]any{
 	}
 
 	type deleteScheduledTaskInput struct {
-		TaskID string
+		TaskID string `json:"task_id"`
 	}
 
 
