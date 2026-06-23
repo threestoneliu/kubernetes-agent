@@ -6,16 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make build   # web (pnpm build) → copy-web_dist → go build ./cmd/server
-make run     # make build && ./kubernetes-agent
+make run     # make build && ./kubernetes-agent  (需要 KUBERNETES_AGENT_CONFIG 环境变量)
 make test    # go test ./...
 make vet     # go vet ./...
 make clean   # rm -rf internal/server/web_dist kubernetes-agent web/dist
 ```
 
+> `make run` 默认读取 `KUBERNETES_AGENT_CONFIG` 环境变量指向的配置文件，
+> 通常设为 `./configs/config.dev.yaml`。不带环境变量直接运行会使用默认配置。
+
 **Dev mode** (前端热重载，改 Go 需要重启后端，改前端 Vite HMR 自动刷新):
 ```bash
-# Terminal 1: 后端
-KUBERNETES_AGENT_CONFIG=./configs/config.dev.yaml GOSUMDB=sum.golang.org go run ./cmd/server
+# Terminal 1: 后端（编译用 make build，运行用 make run）
+KUBERNETES_AGENT_CONFIG=./configs/config.dev.yaml make run
 
 # Terminal 2: 前端
 cd web && pnpm dev   # 监听 localhost:5173，/api 和 /healthz 代理到 8080
