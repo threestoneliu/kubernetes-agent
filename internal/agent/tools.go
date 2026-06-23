@@ -320,7 +320,10 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
 				if in.SessionID == "" {
-					return nil, fmt.Errorf("session_id is required")
+					if d.Session == nil {
+						return nil, fmt.Errorf("session_id is required (no active session)")
+					}
+					in.SessionID = d.Session.ID
 				}
 				if in.CronExpr == nil && in.OnceAt == nil {
 					return nil, fmt.Errorf("either cron_expr or once_at is required")
@@ -563,10 +566,10 @@ var askUserSchema = map[string]any{
 			"name":       map[string]any{"type": "string", "description": "[REQUIRED] task name"},
 			"cron_expr":  map[string]any{"type": "string", "description": "cron expression (e.g. \"0 9 * * *\")"},
 			"once_at":    map[string]any{"type": "number", "description": "UNIX timestamp for one-shot execution"},
-			"session_id": map[string]any{"type": "string", "description": "[REQUIRED] session to send the scheduled message to"},
+			"session_id": map[string]any{"type": "string", "description": "session to send the scheduled message to. Defaults to the current conversation session if omitted."},
 			"cluster_id": map[string]any{"type": "string", "description": "cluster id for the runner"},
 		},
-		"required": []string{"name", "session_id"},
+		"required": []string{"name"},
 	}
 
 	type scheduleTaskInput struct {
