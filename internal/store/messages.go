@@ -80,6 +80,8 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 	}
 	defer stmt.Close()
 	now := time.Now().Unix()
+	// Collect unique session IDs to update their updated_at.
+	sessionIDs := make(map[string]struct{})
 	for _, m := range msgs {
 		ts := m.CreatedAt
 		if ts == 0 {
@@ -91,6 +93,16 @@ func (d *DB) BatchInsertMessages(ctx context.Context, msgs []Message) error {
 		}
 		if _, err := stmt.ExecContext(ctx,
 			m.ID, m.SessionID, m.Role, m.Content, m.ToolCalls, m.ToolCallID, m.Reasoning, ts, source,
+		); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		sessionIDs[m.SessionID] = struct{}{}
+	}
+	// Touch updated_at for all affected sessions.
+	for sid := range sessionIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE sessions SET updated_at = ? WHERE id = ?`, now, sid,
 		); err != nil {
 			_ = tx.Rollback()
 			return err
