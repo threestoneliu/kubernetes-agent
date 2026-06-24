@@ -11,14 +11,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/agent"
-	"github.com/threestoneliu/kubernetes-agent/internal/llm"
 	"github.com/threestoneliu/kubernetes-agent/internal/store"
 )
 
 type chatReq struct {
 	SessionID string `json:"session_id"`
 	Message   string `json:"message"`
-	ClusterID string `json:"cluster_id"`
 }
 
 // chatHandler is the SSE entry point. The handler:
@@ -55,18 +53,9 @@ func chatHandler(d Deps) http.HandlerFunc {
 		var sess store.Session
 		var resolvedID string
 		if req.SessionID == "" {
-			// Default cluster_id may be omitted; the user can
-			// switch later. We capture it on the row for the
-			// sidebar's "active cluster" hint.
-			var clusterPtr *string
-			if req.ClusterID != "" {
-				c := req.ClusterID
-				clusterPtr = &c
-			}
 			sess = store.Session{
-				ID:        uuid.NewString(),
-				Title:     defaultSessionTitle(req.Message),
-				ClusterID: clusterPtr,
+				ID:    uuid.NewString(),
+				Title: defaultSessionTitle(req.Message),
 			}
 			if err := d.DB.CreateSession(r.Context(), sess); err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
@@ -115,7 +104,7 @@ func chatHandler(d Deps) http.HandlerFunc {
 		// the resolved id (in case it was empty in the request).
 		emitSSE(w, flusher, 1, agent.EventSessionMeta, agent.SessionMeta{
 			SessionID: resolvedID,
-			ClusterID: req.ClusterID,
+			ClusterID: "",
 		})
 
 		// Build the runner. If the factory is missing (shouldn't
@@ -129,21 +118,18 @@ func chatHandler(d Deps) http.HandlerFunc {
 			})
 			return
 		}
-		runner := d.RunnerFactory.NewRunner(resolvedID, req.ClusterID)
+		clusterID := ""
+		if sess.ClusterID != nil {
+			clusterID = *sess.ClusterID
+		}
+		runner := d.RunnerFactory.NewRunner(resolvedID, clusterID)
 		events := make(chan agent.Event, 64)
 		var counter uint64
 		runner.Events = events
 		// Session must be set on the runner before Run is called.
 		runner.Session = agent.NewSession(resolvedID)
-		if req.ClusterID != "" {
-			runner.Session.ClusterID = req.ClusterID
-			// Surface the cluster UUID to the LLM via the system
-			// prompt so it can pass cluster_id back to the k8s
-			// tools. Without this the LLM guesses "default" or
-			// asks the user. Append-only — does not replace the
-			// default prompt.
-			runner.SystemPrompt = llm.SystemPrompt +
-				fmt.Sprintf("\n\n当前 session 绑定的 cluster_id: %s。所有 k8s_* 工具调用 MUST 使用此 UUID 作为 cluster_id 参数。", req.ClusterID)
+		if clusterID != "" {
+			runner.Session.ClusterID = clusterID
 		}
 		// Register the live session so the /resume endpoint can
 		// unblock a pending plan confirm or ask_user response.
