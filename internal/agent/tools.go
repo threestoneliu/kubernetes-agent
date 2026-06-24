@@ -68,6 +68,9 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if in.Resource == "" || in.Name == "" {
 					return nil, fmt.Errorf("both resource and name are required (e.g. resource='pods' name='my-pod')")
 				}
+				if d.Session.ClusterID == "" {
+					return nil, fmt.Errorf("session has no cluster bound; connect to a cluster first")
+				}
 				in.ClusterID = d.Session.ClusterID
 				out, err := k8s.Get(ctx, d.Factory, in)
 				if err != nil {
@@ -87,6 +90,9 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				}
 				if in.Resource == "" {
 					return nil, fmt.Errorf("resource is required — you must pass the lowercase plural API resource name (e.g. {\"resource\": \"pods\"})")
+				}
+				if d.Session.ClusterID == "" {
+					return nil, fmt.Errorf("session has no cluster bound; connect to a cluster first")
 				}
 				in.ClusterID = d.Session.ClusterID
 				out, err := k8s.ListTable(ctx, d.Factory, in)
@@ -108,6 +114,9 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if in.Resource == "" || in.Name == "" {
 					return nil, fmt.Errorf("both resource and name are required (e.g. resource='pods' name='my-pod')")
 				}
+				if d.Session.ClusterID == "" {
+					return nil, fmt.Errorf("session has no cluster bound; connect to a cluster first")
+				}
 				in.ClusterID = d.Session.ClusterID
 				out, err := k8s.Describe(ctx, d.Factory, in)
 				if err != nil {
@@ -125,27 +134,28 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				if d.Session.ClusterID == "" {
+					return nil, fmt.Errorf("session has no cluster bound; connect to a cluster first")
+				}
 				// Always fill cluster_id from session (LLM never sends it).
 				// k8s.Operation keeps clusterID unexported, so we
 				// round-trip through JSON using its wire format.
-				if d.Session != nil && d.Session.ClusterID != "" {
-					bound := d.Session.ClusterID
-					for i := range in.Operations {
-						raw, err := json.Marshal(in.Operations[i])
-						if err != nil {
-							continue
-						}
-						var m map[string]any
-						if err := json.Unmarshal(raw, &m); err != nil {
-							continue
-						}
-						m["cluster_id"] = bound
-						fixed, err := json.Marshal(m)
-						if err != nil {
-							continue
-						}
-						_ = json.Unmarshal(fixed, &in.Operations[i])
+				bound := d.Session.ClusterID
+				for i := range in.Operations {
+					raw, err := json.Marshal(in.Operations[i])
+					if err != nil {
+						continue
 					}
+					var m map[string]any
+					if err := json.Unmarshal(raw, &m); err != nil {
+						continue
+					}
+					m["cluster_id"] = bound
+					fixed, err := json.Marshal(m)
+					if err != nil {
+						continue
+					}
+					_ = json.Unmarshal(fixed, &in.Operations[i])
 				}
 				out, err := k8s.PlanWrite(ctx, d.Factory, d.Engine, in)
 				if err != nil {
@@ -204,6 +214,9 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				if err := json.Unmarshal(call.Input, &in); err != nil {
 					return nil, fmt.Errorf("invalid input: %w", err)
 				}
+				if d.Session.ClusterID == "" {
+					return nil, fmt.Errorf("session has no cluster bound; connect to a cluster first")
+				}
 				ops, err := loadOpsForPlan(ctx, d.Store, in.PlanID)
 				if err != nil {
 					return nil, err
@@ -211,24 +224,22 @@ func RegisterK8sTools(d *ToolDeps) []llm.Tool {
 				// Always fill cluster_id from session (operations were stored without it).
 				// Same JSON round-trip as in k8s_plan_write because
 				// k8s.Operation.clusterID is unexported.
-				if d.Session != nil && d.Session.ClusterID != "" {
-					bound := d.Session.ClusterID
-					for i := range ops {
-						raw, err := json.Marshal(ops[i])
-						if err != nil {
-							continue
-						}
-						var m map[string]any
-						if err := json.Unmarshal(raw, &m); err != nil {
-							continue
-						}
-						m["cluster_id"] = bound
-						fixed, err := json.Marshal(m)
-						if err != nil {
-							continue
-						}
-						_ = json.Unmarshal(fixed, &ops[i])
+				bound := d.Session.ClusterID
+				for i := range ops {
+					raw, err := json.Marshal(ops[i])
+					if err != nil {
+						continue
 					}
+					var m map[string]any
+					if err := json.Unmarshal(raw, &m); err != nil {
+						continue
+					}
+					m["cluster_id"] = bound
+					fixed, err := json.Marshal(m)
+					if err != nil {
+						continue
+					}
+						_ = json.Unmarshal(fixed, &ops[i])
 				}
 				out, err := k8s.ExecutePlan(ctx, d.Factory, d.Engine, d.Store, in, ops)
 				if err != nil {
