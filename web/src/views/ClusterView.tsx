@@ -10,6 +10,7 @@ export function ClusterView() {
   const [kubeconfig, setKubeconfig] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
   const [pendingDelete, setPendingDelete] = React.useState<string | null>(null)
+  const [showModal, setShowModal] = React.useState(false)
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
@@ -58,40 +59,59 @@ export function ClusterView() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <h2 style={{ margin: 0 }}>集群管理</h2>
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>添加集群</h3>
-        <form onSubmit={submit} className="form-grid">
-          <label>
-            名称
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如: dev"
-              disabled={submitting}
-            />
-          </label>
-          <label>
-            kubeconfig (YAML)
-            <textarea
-              value={kubeconfig}
-              onChange={(e) => setKubeconfig(e.target.value)}
-              placeholder="apiVersion: v1\nkind: Config\n..."
-              disabled={submitting}
-            />
-          </label>
-          <div>
-            <button type="submit" className="primary" disabled={submitting || !name.trim() || !kubeconfig.trim()}>
-              {submitting ? '提交中…' : '添加'}
-            </button>
-          </div>
-        </form>
+      <div className="toolbar">
+        <strong>已配置的集群</strong>
+        <span className="muted">{clusters.length} 个</span>
+        <button onClick={() => void refresh()} disabled={loading}>刷新</button>
+        <button onClick={() => setShowModal(true)}>新建集群</button>
       </div>
-      <div>
-        <div className="toolbar">
-          <strong>已配置的集群</strong>
-          <span className="muted">{clusters.length} 个</span>
-          <button onClick={() => void refresh()} disabled={loading}>刷新</button>
+      {showModal && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}
+        >
+          <div className="modal">
+            <h2>新建集群</h2>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              if (!name.trim() || !kubeconfig.trim()) return
+              setSubmitting(true)
+              createCluster({ name: name.trim(), kubeconfig })
+                .then(() => { setShowModal(false); setName(''); setKubeconfig('') })
+                .catch((err) => show(formatError(err)))
+                .finally(() => setSubmitting(false))
+            }}>
+              <label>
+                名称
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如: dev"
+                  disabled={submitting}
+                />
+              </label>
+              <label>
+                kubeconfig (YAML)
+                <textarea
+                  value={kubeconfig}
+                  onChange={(e) => setKubeconfig(e.target.value)}
+                  placeholder="apiVersion: v1\nkind: Config\n..."
+                  disabled={submitting}
+                />
+              </label>
+              <div className="modal-actions">
+                <button type="button" onClick={() => setShowModal(false)} disabled={submitting}>取消</button>
+                <button type="submit" className="primary" disabled={submitting || !name.trim() || !kubeconfig.trim()}>
+                  {submitting ? '提交中…' : '添加'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
+      )}
+      <div>
         <div className="list">
           {clusters.map((c) => (
             <div className="row" key={c.id}>
