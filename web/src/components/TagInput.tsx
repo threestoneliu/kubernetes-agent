@@ -45,8 +45,14 @@ export function TagInput({ label, tags, onChange, placeholder = '' }: TagInputPr
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={tags.length === 0 ? placeholder : ''}
-          style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, minWidth: 80 }}
+          style={{ border: '1px solid var(--border)', borderRadius: 4, outline: 'none', background: 'var(--input-bg, #fff)', fontSize: 12, minWidth: 100, padding: '2px 6px' }}
         />
+        <button
+          type="button"
+          onClick={addTag}
+          disabled={!input.trim()}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '2px 6px', color: 'var(--accent)' }}
+        >+</button>
       </div>
     </label>
   )
