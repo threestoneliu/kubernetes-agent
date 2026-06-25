@@ -29,7 +29,7 @@ function serializeFormToYaml(form: PolicyForm): string {
   if (form.action.delete) actions.push('delete')
   if (form.action.scale) actions.push('scale')
 
-  const match: Record<string, any> = {}
+  const match: Record<string, unknown> = {}
   if (actions.length > 0) match.action = actions
   if (form.namespace.length > 0) match.namespace = form.namespace
   if (form.kind.length > 0) match.kind = form.kind
@@ -37,7 +37,7 @@ function serializeFormToYaml(form: PolicyForm): string {
     try { match.unsafeFields = yaml.load(form.unsafeFields) } catch { /* ignore */ }
   }
 
-  const rule: Record<string, any> = {
+  const rule: Record<string, unknown> = {
     name: form.name,
     effect: form.effect,
     match,
@@ -48,20 +48,20 @@ function serializeFormToYaml(form: PolicyForm): string {
 
 function parseYamlToForm(yamlText: string): PolicyForm | null {
   try {
-    const doc = yaml.load(yamlText) as Record<string, any>
+    const doc = yaml.load(yamlText) as Record<string, unknown>
     if (!doc || typeof doc !== 'object') return null
-    const match: Record<string, any> = doc.match || {}
-    const actions: string[] = Array.isArray(match.action) ? match.action : []
+    const match: Record<string, unknown> = (doc.match || {}) as Record<string, unknown>
+    const actions: unknown[] = Array.isArray(match.action) ? match.action : []
     return {
       name: typeof doc.name === 'string' ? doc.name : '',
-      effect: (['allow', 'confirm', 'deny'].includes(doc.effect)) ? doc.effect : 'deny',
+      effect: (['allow', 'confirm', 'deny'].includes(doc.effect as string)) ? doc.effect as Effect : 'deny',
       action: {
         apply: actions.includes('apply'),
         delete: actions.includes('delete'),
         scale: actions.includes('scale'),
       },
-      namespace: Array.isArray(match.namespace) ? match.namespace.filter((v: any) => typeof v === 'string') : [],
-      kind: Array.isArray(match.kind) ? match.kind.filter((v: any) => typeof v === 'string') : [],
+      namespace: Array.isArray(match.namespace) ? (match.namespace as string[]).filter(v => typeof v === 'string') : [],
+      kind: Array.isArray(match.kind) ? (match.kind as string[]).filter(v => typeof v === 'string') : [],
       unsafeFields: match.unsafeFields ? yaml.dump(match.unsafeFields) : '',
     }
   } catch {
@@ -140,7 +140,6 @@ export function PolicyFormModal({ policy, onClose, onDone, show }: PolicyFormMod
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ minWidth: 720, maxWidth: 900 }}>
         <div style={{ display: 'flex', gap: 16 }}>
-          {/* LEFT: Form (60%) */}
           <div style={{ flex: '0 0 60%' }}>
             <h3 style={{ margin: '0 0 16px' }}>{isEdit ? '编辑策略' : '新建策略'}</h3>
             <form onSubmit={handleSubmit}>
@@ -153,7 +152,6 @@ export function PolicyFormModal({ policy, onClose, onDone, show }: PolicyFormMod
                   style={{ width: '100%', marginTop: 4 }}
                 />
               </label>
-
               <label style={{ display: 'block', marginBottom: 12 }}>
                 <span className="muted" style={{ fontSize: 12 }}>效果</span>
                 <select
@@ -166,46 +164,55 @@ export function PolicyFormModal({ policy, onClose, onDone, show }: PolicyFormMod
                   <option value="deny">deny — 直接拒绝</option>
                 </select>
               </label>
-
               <div style={{ marginBottom: 12 }}>
                 <span className="muted" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>操作类型</span>
-                {(['apply', 'delete', 'scale'] as const).map(a => (
-                  <label key={a} style={{ marginRight: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={form.action[a]}
-                      onChange={() => updateForm({ action: { ...form.action, [a]: !form.action[a] } })}
-                    />
-                    {a}
-                  </label>
-                ))}
+                <label style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.action.apply}
+                    onChange={() => updateForm({ action: { ...form.action, apply: !form.action.apply } })}
+                  />
+                  apply
+                </label>
+                <label style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.action.delete}
+                    onChange={() => updateForm({ action: { ...form.action, delete: !form.action.delete } })}
+                  />
+                  delete
+                </label>
+                <label style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.action.scale}
+                    onChange={() => updateForm({ action: { ...form.action, scale: !form.action.scale } })}
+                  />
+                  scale
+                </label>
               </div>
-
               <TagInput
                 label="命名空间"
                 tags={form.namespace}
                 onChange={ns => updateForm({ namespace: ns })}
                 placeholder="输入后回车添加"
               />
-
               <TagInput
                 label="资源类型"
                 tags={form.kind}
                 onChange={k => updateForm({ kind: k })}
                 placeholder="输入后回车添加"
               />
-
               <label style={{ display: 'block', marginBottom: 12 }}>
                 <span className="muted" style={{ fontSize: 12 }}>危险字段 (JSONPath → 值)</span>
                 <textarea
                   value={form.unsafeFields}
                   onChange={e => updateForm({ unsafeFields: e.target.value })}
                   rows={3}
-                  placeholder={'spec.template.spec.containers[*].securityContext.privileged: true'}
+                  placeholder="spec.template.spec.hostNetwork: true"
                   style={{ width: '100%', marginTop: 4, resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
                 />
               </label>
-
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
                 <button type="button" onClick={onClose} disabled={saving}>取消</button>
                 <button
@@ -218,8 +225,6 @@ export function PolicyFormModal({ policy, onClose, onDone, show }: PolicyFormMod
               </div>
             </form>
           </div>
-
-          {/* RIGHT: YAML (40%) */}
           <div style={{ flex: 1 }}>
             <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 500 }}>YAML</h4>
             <textarea
@@ -227,7 +232,6 @@ export function PolicyFormModal({ policy, onClose, onDone, show }: PolicyFormMod
               onChange={handleYamlChange}
               style={{
                 width: '100%',
-                height: 'calc(100% - 20px)',
                 minHeight: 300,
                 fontFamily: 'monospace',
                 fontSize: 12,
