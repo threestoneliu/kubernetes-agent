@@ -44,6 +44,16 @@ export function ClusterView() {
     }
   }
 
+  function handleModalSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim() || !kubeconfig.trim()) return
+    setSubmitting(true)
+    createCluster({ name: name.trim(), kubeconfig })
+      .then(() => { setShowModal(false); setName(''); setKubeconfig('') })
+      .catch((err) => show(formatError(err)))
+      .finally(() => setSubmitting(false))
+  }
+
   async function remove(id: string) {
     setPendingDelete(id)
     try {
@@ -74,15 +84,7 @@ export function ClusterView() {
         >
           <div className="modal">
             <h2>新建集群</h2>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              if (!name.trim() || !kubeconfig.trim()) return
-              setSubmitting(true)
-              createCluster({ name: name.trim(), kubeconfig })
-                .then(() => { setShowModal(false); setName(''); setKubeconfig('') })
-                .catch((err) => show(formatError(err)))
-                .finally(() => setSubmitting(false))
-            }}>
+            <form className="form-grid" onSubmit={handleModalSubmit}>
               <label>
                 名称
                 <input
@@ -102,7 +104,7 @@ export function ClusterView() {
                 />
               </label>
               <div className="modal-actions">
-                <button type="button" onClick={() => setShowModal(false)} disabled={submitting}>取消</button>
+                <button type="button" className="cancel" onClick={() => setShowModal(false)} disabled={submitting}>取消</button>
                 <button type="submit" className="primary" disabled={submitting || !name.trim() || !kubeconfig.trim()}>
                   {submitting ? '提交中…' : '添加'}
                 </button>
@@ -111,28 +113,26 @@ export function ClusterView() {
           </div>
         </div>
       )}
-      <div>
-        <div className="list">
-          {clusters.map((c) => (
-            <div className="row" key={c.id}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div>
-                  <strong>{c.name}</strong>{' '}
-                  <span className="muted" style={{ fontSize: 12 }}>{c.id}</span>
-                </div>
-                <div className="muted" style={{ wordBreak: 'break-all' }}>{c.server || '(无 server)'}</div>
-                <div className="muted">user: {c.user || '-'}</div>
+      <div className="list">
+        {clusters.map((c) => (
+          <div className="row" key={c.id}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div>
+                <strong>{c.name}</strong>{' '}
+                <span className="muted" style={{ fontSize: 12 }}>{c.id}</span>
               </div>
-              <button
-                className="danger"
-                onClick={() => void remove(c.id)}
-                disabled={pendingDelete === c.id}
-              >
-                {pendingDelete === c.id ? '删除中…' : '删除'}
-              </button>
+              <div className="muted" style={{ wordBreak: 'break-all' }}>{c.server || '(无 server)'}</div>
+              <div className="muted">user: {c.user || '-'}</div>
             </div>
-          ))}
-        </div>
+            <button
+              className="danger"
+              onClick={() => void remove(c.id)}
+              disabled={pendingDelete === c.id}
+            >
+              {pendingDelete === c.id ? '删除中…' : '删除'}
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   )
