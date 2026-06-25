@@ -252,8 +252,21 @@ func deleteSessionHandler(d Deps) http.HandlerFunc {
 
 // bulkDeleteSessionsHandler empties the sessions table. Caller is
 // expected to confirm in the UI before issuing this request.
+// Refuses if any session has scheduled tasks bound to it.
 func bulkDeleteSessionsHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if any session has scheduled tasks.
+		tasks, err := d.DB.GetScheduledTasks(r.Context(), "")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal",
+				err.Error(), true)
+			return
+		}
+		if len(tasks) > 0 {
+			writeError(w, http.StatusConflict, "has_scheduled_tasks",
+				"cannot clear sessions while scheduled tasks exist; delete them first", false)
+			return
+		}
 		n, err := d.DB.DeleteAllSessions(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal",
