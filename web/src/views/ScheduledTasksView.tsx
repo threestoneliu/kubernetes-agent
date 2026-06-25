@@ -75,7 +75,7 @@ export function ScheduledTasksView() {
   const deleteTask = deleteId ? tasks.find((t) => t.id === deleteId) : null
 
   return (
-    <div style={{ padding: '16px', maxWidth: 900 }}>
+    <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, justifyContent: 'space-between' }}>
         <h2 style={{ margin: 0 }}>定时任务</h2>
         <button className="primary" onClick={() => setCreateOpen(true)}>
