@@ -4,7 +4,7 @@
 
 ### Requirement: ClusterView SHALL display the cluster list by default
 
-The cluster list view loads without showing the add form first.
+(MUST) The cluster list view loads without showing the add form first.
 
 #### Scenario: Page loads with list visible
 - **WHEN** the user navigates to the clusters view
@@ -14,7 +14,7 @@ The cluster list view loads without showing the add form first.
 
 ### Requirement: ClusterView SHALL open a modal dialog when creating a new cluster
 
-Clicking the "新建集群" button opens a modal containing the add form.
+(MUST) Clicking the "新建集群" button opens a modal containing the add form.
 
 #### Scenario: User clicks "新建集群" button
 - **WHEN** the user clicks the "新建集群" button in the toolbar
@@ -28,7 +28,7 @@ Clicking the "新建集群" button opens a modal containing the add form.
 
 ### Requirement: ClusterView SHALL close the modal and refresh the list after successful cluster creation
 
-Submitting the form in the modal closes it and updates the cluster list.
+(MUST) Submitting the form in the modal closes it and updates the cluster list.
 
 #### Scenario: Successful form submission closes modal
 - **WHEN** the user fills in name and kubeconfig and clicks "添加"
