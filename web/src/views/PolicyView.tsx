@@ -1,10 +1,10 @@
 import React from 'react'
-import { ApiCallError, Policy, listPolicies, setPolicyEnabled, updatePolicy } from '../api'
+import { ApiCallError, Policy, deletePolicy, listPolicies, setPolicyEnabled } from '../api'
+import { ConfirmModal } from '../components/ConfirmModal'
+import { PolicyFormModal } from '../components/PolicyFormModal'
 import { useToast } from '../components/ToastProvider'
 
-type Effect = 'allow' | 'confirm' | 'deny' | string
-
-function EffectBadge({ effect }: { effect: Effect }) {
+function EffectBadge({ effect }: { effect: string }) {
   const known = ['allow', 'confirm', 'deny'].includes(effect) ? effect : ''
   return (
     <span className={`badge ${known}`}>
@@ -13,13 +13,21 @@ function EffectBadge({ effect }: { effect: Effect }) {
   )
 }
 
+function extractEffect(yamlStr: string): string {
+  for (const line of yamlStr.split('\n')) {
+    const m = line.match(/^\s*effect:\s*(\S+)\s*$/)
+    if (m) return m[1]
+  }
+  return ''
+}
+
 export function PolicyView() {
   const { show } = useToast()
   const [policies, setPolicies] = React.useState<Policy[]>([])
   const [loading, setLoading] = React.useState(false)
-  const [editing, setEditing] = React.useState<string | null>(null)
-  const [draft, setDraft] = React.useState('')
-  const [saving, setSaving] = React.useState(false)
+  const [showForm, setShowForm] = React.useState(false)
+  const [editingPolicy, setEditingPolicy] = React.useState<Policy | null>(null)
+  const [deleteId, setDeleteId] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
@@ -33,9 +41,7 @@ export function PolicyView() {
     }
   }, [show])
 
-  React.useEffect(() => {
-    void refresh()
-  }, [refresh])
+  React.useEffect(() => { void refresh() }, [refresh])
 
   async function toggle(p: Policy, enabled: boolean) {
     try {
@@ -46,44 +52,31 @@ export function PolicyView() {
     }
   }
 
-  function startEdit(p: Policy) {
-    setEditing(p.id)
-    setDraft(p.yaml)
-  }
-
-  function cancelEdit() {
-    setEditing(null)
-    setDraft('')
-  }
-
-  async function saveEdit(p: Policy) {
-    setSaving(true)
+  async function handleDelete(id: string) {
+    setDeleteId(null)
     try {
-      await updatePolicy(p.id, draft)
-      setEditing(null)
-      setDraft('')
+      await deletePolicy(id)
       await refresh()
     } catch (err) {
       show(formatError(err))
-    } finally {
-      setSaving(false)
     }
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%', overflow: 'hidden' }}>
       <h2 style={{ margin: 0 }}>策略编辑</h2>
       <div className="toolbar">
         <span className="muted">{policies.length} 条策略</span>
         <button onClick={() => void refresh()} disabled={loading}>刷新</button>
+        <button onClick={() => { setEditingPolicy(null); setShowForm(true) }}>+ 新建策略</button>
       </div>
-      <div className="list">
+      <div className="list" style={{ flex: 1, overflowY: 'auto' }}>
         {policies.map((p) => (
           <div key={p.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--border-soft)' }}>
-            <div className="row">
-              <div style={{ flex: 1 }}>
-                <strong>{p.name}</strong>{' '}
-                <span className="muted" style={{ fontSize: 12 }}>{p.id}</span>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <strong>{p.name}</strong>
+                <span className="muted" style={{ fontSize: 12 }}> {p.id}</span>
               </div>
               <EffectBadge effect={extractEffect(p.yaml)} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
@@ -94,50 +87,34 @@ export function PolicyView() {
                 />
                 {p.enabled ? '启用' : '已停用'}
               </label>
-              {editing === p.id ? (
-                <>
-                  <button onClick={cancelEdit} disabled={saving}>取消</button>
-                  <button
-                    className="primary"
-                    onClick={() => void saveEdit(p)}
-                    disabled={saving || !draft.trim()}
-                  >
-                    {saving ? '保存中…' : '保存'}
-                  </button>
-                </>
-              ) : (
-                <button onClick={() => startEdit(p)}>编辑 YAML</button>
-              )}
+              <button onClick={() => { setEditingPolicy(p); setShowForm(true) }} style={{ marginLeft: 8 }}>编辑</button>
+              <button style={{ color: '#d32f2f', marginLeft: 4 }} onClick={() => setDeleteId(p.id)}>删除</button>
             </div>
-            {editing === p.id ? (
-              <textarea
-                className="policy-yaml"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                disabled={saving}
-                style={{ width: '100%', marginTop: 8 }}
-              />
-            ) : (
-              <details style={{ marginTop: 6 }}>
-                <summary className="muted">查看 YAML</summary>
-                <pre>{p.yaml}</pre>
-              </details>
-            )}
           </div>
         ))}
       </div>
+
+      {showForm && (
+        <PolicyFormModal
+          policy={editingPolicy}
+          onClose={() => setShowForm(false)}
+          onDone={() => { setShowForm(false); setEditingPolicy(null); void refresh() }}
+          show={show}
+        />
+      )}
+
+      {deleteId && (
+        <ConfirmModal
+          title="删除策略"
+          message={<span>确认删除策略 <strong>{policies.find(p => p.id === deleteId)?.name}</strong>？此操作不可撤销。</span>}
+          confirmLabel="确认删除"
+          onConfirm={() => void handleDelete(deleteId!)}
+          onCancel={() => setDeleteId(null)}
+          danger
+        />
+      )}
     </div>
   )
-}
-
-function extractEffect(yaml: string): string {
-  // Cheap best-effort parse: pull the first "effect:" line out of the YAML
-  // so the badge stays accurate without dragging in a full YAML parser.
-  for (const line of yaml.split('\n')) {
-    const m = line.match(/^\s*effect:\s*(\S+)\s*$/)
-    if (m) return m[1]
-  }
-  return ''
 }
 
 function formatError(err: unknown): string {
