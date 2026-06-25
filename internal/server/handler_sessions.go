@@ -250,30 +250,29 @@ func deleteSessionHandler(d Deps) http.HandlerFunc {
 	}
 }
 
-// bulkDeleteSessionsHandler empties the sessions table. Caller is
-// expected to confirm in the UI before issuing this request.
-// Refuses if any session has scheduled tasks bound to it.
+// bulkDeleteSessionsHandler removes sessions without scheduled tasks.
+// Sessions bound to scheduled tasks are kept; the response tells
+// the caller how many were skipped.
 func bulkDeleteSessionsHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Check if any session has scheduled tasks.
+		// Count sessions with scheduled tasks (to report how many were kept).
 		tasks, err := d.DB.GetScheduledTasks(r.Context(), "")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal",
 				err.Error(), true)
 			return
 		}
-		if len(tasks) > 0 {
-			writeError(w, http.StatusConflict, "has_scheduled_tasks",
-				"cannot clear sessions while scheduled tasks exist; delete them first", false)
-			return
-		}
-		n, err := d.DB.DeleteAllSessions(r.Context())
+		kept := len(tasks)
+		n, err := d.DB.DeleteSessionsWithoutScheduledTasks(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal",
 				err.Error(), true)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"deleted": n,
+			"skipped_scheduled": kept,
+		})
 	}
 }
 

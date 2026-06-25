@@ -176,3 +176,17 @@ func (d *DB) DeleteAllSessions(ctx context.Context) (int64, error) {
 	n, _ := res.RowsAffected()
 	return n, nil
 }
+
+// DeleteSessionsWithoutScheduledTasks removes sessions that are not bound to any
+// scheduled task. Returns the count of deleted sessions.
+func (d *DB) DeleteSessionsWithoutScheduledTasks(ctx context.Context) (int64, error) {
+	res, err := d.ExecContext(ctx, `
+		DELETE FROM sessions
+		WHERE id NOT IN (SELECT DISTINCT session_id FROM scheduled_tasks)
+	`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
