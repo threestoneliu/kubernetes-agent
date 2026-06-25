@@ -31,7 +31,7 @@ export function TagInput({ label, tags, onChange, placeholder = '' }: TagInputPr
       <span className="muted" style={{ fontSize: 12 }}>{label}</span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4, alignItems: 'center' }}>
         {tags.map((tag, i) => (
-          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'var(--accent)', color: '#fff', borderRadius: 4, padding: '2px 6px', fontSize: 12 }}>
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: '#3b82f6', color: '#fff', borderRadius: 4, padding: '2px 6px', fontSize: 12 }}>
             {tag}
             <button
               type="button"
@@ -51,7 +51,7 @@ export function TagInput({ label, tags, onChange, placeholder = '' }: TagInputPr
           type="button"
           onClick={addTag}
           disabled={!input.trim()}
-          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '2px 6px', color: 'var(--accent)' }}
+          style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '2px 6px', color: '#3b82f6' }}
         >+</button>
       </div>
     </label>

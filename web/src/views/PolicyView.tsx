@@ -88,7 +88,10 @@ export function PolicyView() {
                 {p.enabled ? '启用' : '已停用'}
               </label>
               <button onClick={() => { setEditingPolicy(p); setShowForm(true) }} style={{ marginLeft: 8 }}>编辑</button>
-              <button style={{ color: '#d32f2f', marginLeft: 4 }} onClick={() => setDeleteId(p.id)}>删除</button>
+              {['deny-delete-system-ns', 'deny-dangerous-kinds', 'deny-privileged', 'confirm-production'].includes(p.name)
+                ? null
+                : <button style={{ color: '#d32f2f', marginLeft: 4 }} onClick={() => setDeleteId(p.id)}>删除</button>
+              }
             </div>
           </div>
         ))}
