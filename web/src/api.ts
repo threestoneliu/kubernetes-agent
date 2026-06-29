@@ -140,12 +140,20 @@ export function listPolicies(): Promise<{ policies: Policy[] }> {
   return request('GET', '/api/policies')
 }
 
+export function createPolicy(yaml: string): Promise<Policy> {
+  return request('POST', '/api/policies', { yaml })
+}
+
 export function updatePolicy(id: string, yaml: string): Promise<Policy> {
   return request('PUT', `/api/policies/${encodeURIComponent(id)}`, { yaml })
 }
 
 export async function setPolicyEnabled(id: string, enabled: boolean): Promise<void> {
   await request<void>('PATCH', `/api/policies/${encodeURIComponent(id)}/enabled`, { enabled })
+}
+
+export async function deletePolicy(id: string): Promise<void> {
+  await request<void>('DELETE', `/api/policies/${encodeURIComponent(id)}`)
 }
 
 // --- sessions ---

@@ -66,7 +66,9 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Route("/api/policies", func(r chi.Router) {
 		r.Get("/", listPoliciesHandler(d))
+		r.Post("/", createPolicyHandler(d))
 		r.Put("/{id}", updatePolicyHandler(d))
+		r.Delete("/{id}", deletePolicyHandler(d))
 		r.Patch("/{id}/enabled", togglePolicyHandler(d))
 	})
 

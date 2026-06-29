@@ -2,9 +2,11 @@ package server
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
 	"github.com/threestoneliu/kubernetes-agent/internal/policy"
@@ -55,6 +57,51 @@ type updatePolicyReq struct {
 	YAML string `json:"yaml"`
 }
 
+type createPolicyReq struct {
+	YAML string `json:"yaml"`
+}
+
+func createPolicyHandler(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req createPolicyReq
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.YAML == "" {
+			writeError(w, http.StatusBadRequest, "validation_error", "yaml is required", false)
+			return
+		}
+		var rule policy.Rule
+		if err := yaml.Unmarshal([]byte(req.YAML), &rule); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_yaml", err.Error(), false)
+			return
+		}
+		if rule.Name == "" {
+			writeError(w, http.StatusBadRequest, "validation_error", "rule.name is required", false)
+			return
+		}
+		if rule.Effect == "" {
+			writeError(w, http.StatusBadRequest, "validation_error", "rule.effect is required", false)
+			return
+		}
+		row := store.Policy{
+			ID:      uuid.NewString(),
+			Name:    rule.Name,
+			YAML:    req.YAML,
+			Enabled: true,
+		}
+		if err := d.DB.UpsertPolicy(r.Context(), row); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
+			return
+		}
+		if err := d.Engine.ReloadPolicies(r.Context(), d.DB); err != nil {
+			slog.Warn("policy reload failed", "err", err)
+		}
+		writeAudit(r, d, "policy_create", row.ID)
+		writeJSON(w, http.StatusCreated, toPolicyView(row))
+	}
+}
+
 func updatePolicyHandler(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
@@ -99,8 +146,30 @@ func updatePolicyHandler(d Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
 			return
 		}
+		if err := d.Engine.ReloadPolicies(r.Context(), d.DB); err != nil {
+			slog.Warn("policy reload failed", "err", err)
+		}
 		writeAudit(r, d, "policy_update", id)
 		writeJSON(w, http.StatusOK, toPolicyView(row))
+	}
+}
+
+func deletePolicyHandler(d Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if err := d.DB.DeletePolicy(r.Context(), id); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "not_found", "policy not found", false)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
+			return
+		}
+		if err := d.Engine.ReloadPolicies(r.Context(), d.DB); err != nil {
+			slog.Warn("policy reload failed", "err", err)
+		}
+		writeAudit(r, d, "policy_delete", id)
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -122,6 +191,9 @@ func togglePolicyHandler(d Deps) http.HandlerFunc {
 			}
 			writeError(w, http.StatusInternalServerError, "internal", err.Error(), true)
 			return
+		}
+		if err := d.Engine.ReloadPolicies(r.Context(), d.DB); err != nil {
+			slog.Warn("policy reload failed", "err", err)
 		}
 		writeAudit(r, d, "policy_toggle", id)
 		w.WriteHeader(http.StatusNoContent)

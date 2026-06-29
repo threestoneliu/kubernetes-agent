@@ -1,12 +1,50 @@
 package policy
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Engine struct {
 	Rules []Rule
+}
+
+// ReloadPolicies re-reads all enabled policies from the store and replaces
+// e.Rules so that policy edits take effect at runtime without a
+// server restart.
+func (e *Engine) ReloadPolicies(ctx context.Context, store Store) error {
+	rows, err := store.ListEnabledPoliciesForEngine(ctx)
+	if err != nil {
+		return err
+	}
+	rules := make([]Rule, 0, len(rows))
+	for _, row := range rows {
+		yamlStr, _ := row["yaml"].(string)
+		nameStr, _ := row["name"].(string)
+		if yamlStr == "" {
+			continue
+		}
+		var rule Rule
+		if err := yaml.Unmarshal([]byte(yamlStr), &rule); err != nil {
+			return err
+		}
+		if nameStr != "" {
+			rule.Name = nameStr
+		}
+		rules = append(rules, rule)
+	}
+	e.Rules = rules
+	return nil
+}
+
+// Store is implemented by *store.DB. It is satisfied via the
+// ListEnabledPoliciesForEngine method which returns raw map rows
+// so the policy package never imports the store package.
+type Store interface {
+	ListEnabledPoliciesForEngine(context.Context) ([]map[string]any, error)
 }
 
 func (e *Engine) Evaluate(op OperationInfo) Effect {

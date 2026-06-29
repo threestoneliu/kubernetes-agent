@@ -38,6 +38,35 @@ func (d *DB) UpsertPolicy(ctx context.Context, p Policy) error {
 	return err
 }
 
+// ListEnabledPoliciesForEngine returns enabled policies as []map[string]any,
+// compatible with the policy.Store interface expected by Engine.Reload.
+func (d *DB) ListEnabledPoliciesForEngine(ctx context.Context) ([]map[string]any, error) {
+	rows, err := d.QueryContext(ctx,
+		`SELECT id, name, yaml, enabled, created_at, updated_at
+		 FROM policies WHERE enabled = 1 ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var p Policy
+		var enabled int
+		var createdTS, updatedTS int64
+		if err := rows.Scan(&p.ID, &p.Name, &p.YAML, &enabled, &createdTS, &updatedTS); err != nil {
+			return nil, err
+		}
+		p.Enabled = enabled != 0
+		p.CreatedAt = time.Unix(createdTS, 0)
+		p.UpdatedAt = time.Unix(updatedTS, 0)
+		out = append(out, map[string]any{
+			"name": p.Name,
+			"yaml": p.YAML,
+		})
+	}
+	return out, rows.Err()
+}
+
 func (d *DB) ListEnabledPolicies(ctx context.Context) ([]Policy, error) {
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, name, yaml, enabled, created_at, updated_at
@@ -87,6 +116,18 @@ func (d *DB) ListAllPolicies(ctx context.Context) ([]Policy, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) DeletePolicy(ctx context.Context, id string) error {
+	res, err := d.ExecContext(ctx, `DELETE FROM policies WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (d *DB) SetEnabled(ctx context.Context, id string, enabled bool) error {
